@@ -1,0 +1,88 @@
+End to End File Copy Design Docs
+--------------------------------
+
+Author: Michael Egonu (megonu01) &  Remmy Chen (rchen07)
+Date: 2/17/2019
+
+SUMMARY
+-------
+We will be writing an end to end file copy program whereby
+the end to end file checking principle is implemented such
+that the program will never incorrectly claim to have successfully 
+copied a file and whereby the file copy protocol is implemented.
+
+CURRENT STATE
+-------------
+The end to end file checking portion has been completed to
+the best of our knowledge, with the correct behavior and the
+correct logs when the TARGET folder has files that are or are
+not the same as those of the SOURCE folder at different server
+nastiness levels. File checking is done using SHA1 encryption.
+
+What remains to be done includes having the sever quietly flush 
+any duplicate confirmations it might get when sever nastiness is 
+high, modularizing our code to have smaller code chunks particularly
+in main(), more rigorous testing, writing contracts and more
+annotations for our code, and of course the actual implementation
+of the file transfer protocol. 
+
+INVARIANTS
+----------
+A central assumption that our program will make is that files will
+be sent in order linearly, meaning that only one file may be worked
+on at any given time by the client and the server program. In other
+words, the entire "handshake" of initializing, transmitting, matching,
+confirming, and acknowledging between client and server must be done 
+for one file before continuing to the next file. 
+
+Advantages of this invariant include simpler implementation and less
+control information in packets of file contents. Disadvantages of 
+this invariant include lower success rate when network nastiness 
+level is high.
+
+TEST CASES
+----------
+Test cases have been provided for us by adjusting nastiness levels for
+the network and for files.
+
+
+DESIGN
+------
+The dgmsocket framework that we're using has a limit of 512 bytes 
+for UDP packets. We need to reserve some space for control information,
+which will contain the order of the packet as well as some signature
+that allows the server to distinguish it from messages that are part
+of the end to end check process. Our invariant allows us not to store 
+information about which file the packet is for within a packet. 
+
+We may just decide on some arbitrary signature by which to recognize 
+file content packets from other packets, with the risk of a non-file 
+content packet being recognized as a file content packet minimized
+by clever choice of signature.
+
+The amount of space to reserve for control information draws the questions 
+of how much is needed to communicate the control information and of 
+whether the amount of space to reserve should be the same for packets
+of different files universally, or adjusted depending on file size.
+An advantage of a universal size is simpler implementation while 
+disadvantages includes potentially wasting too much space. The risk of
+not having enough space for control information exists for all files,
+given sufficiently large file size. 
+
+For the initial implementation, universal size may be desired. To address 
+the risk of not having enough space for control information, perhaps 
+the packet number may be modulo-ed and the server makes a request for a
+new round of file transmission with packet number reset to 0 whenever
+the server has received some number of packets from 0 to range x. 
+
+The data format of the packets that the client sends to the server may 
+be binary or text, and for the sake of simplicity we will opt for text.
+
+We will need to implement a mechanism to handle the case where the 
+server receives the start of 2nd transfer ahead of the final packets
+for the first transfer.
+
+
+
+
+
