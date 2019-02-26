@@ -30,6 +30,7 @@
 #include <queue>
 #include <openssl/sha.h>
 #include <cstdlib>
+#include <math.h>
 
 using namespace std;          // for C++ std library
 using namespace C150NETWORK;  // for all the comp150 utilities 
@@ -40,10 +41,11 @@ void setUpDebugLogging(const char *logname, int argc, char *argv[]);
 string makeFileName(string dir, string name);
 void checkDirectory(char *dirname);
 void shaEncrypt(unsigned char *hash, const unsigned char *message);
-void encryptFileNames(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<string> *files);
+void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<string> *fileNames, queue<string> *fileContent);
 void printFileHash(unsigned char *hash, char *file_name);
 void checkArgs(int argc, char *argv[]);
 void checkMsg(char (&incomingMessage)[512], ssize_t readlen);
+void createPackets(string fileCon, vector<char *> *packets);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 //                    Command line arguments
@@ -66,7 +68,9 @@ int main(int argc, char *argv[]) {
     int network_nastiness, file_nastiness;
     DIR *SRC;
     vector<string> shaCodes;
-    queue<string> files;
+    queue<string> fileNames;
+    queue<string> fileContent;
+    vector<char *> packets; 
     int file_num = 0;
     int transmission_attempt = 0, end_to_end_attempt = 0, confirmation_attempt = 0;
     string msgList[] = {"BEGIN_TRANSMIT", "COMPLETED_TRANSMIT", "MATCHED_CHECKSUM", "WRONG_CHECKSUM", "ACKNOWLEDGEMENT"};
@@ -92,9 +96,10 @@ int main(int argc, char *argv[]) {
         fprintf(stderr,"Error opening source directory %s\n", argv[4]);
         exit(8);
     }
-    encryptFileNames(argv[4], SRC, &shaCodes, &files);
+    preprocessFiles(argv[4], SRC, &shaCodes, &fileNames, &fileContent);
     closedir(SRC);
-
+ 
+ 
     // Send / receive / print loop
     try {
         // Create the socket
@@ -107,27 +112,31 @@ int main(int argc, char *argv[]) {
         // Allow time out if no packet is received for 3000 milliseconds
         sock -> turnOnTimeouts(3000);
 
-        while(!files.empty()) {
+        while(!fileNames.empty()) {
 
             // WRITE BEGIN_TRANSMIT:<filename>
-            string file = files.front();
+            string fileName = fileNames.front();
             //printf("0 File to transmit is %s\n", file.c_str());
-            string initMsg = (msgList[0] + ":" + file).c_str();
+            string initMsg = (msgList[0] + ":" + fileName).c_str();
             sock -> write(initMsg.c_str(), strlen(initMsg.c_str())+1);
-            *GRADING << "File: " << file << ", beginning transmission, attempt "
+            *GRADING << "File: " << fileName << ", beginning transmission, attempt "
                 << transmission_attempt << endl;
 
             // TODO - TRANSMIT FILES
+            // _ _ _ _ 4 chars for control info; 508 chars for file content
+            // number of packets = ceil(fileSize / 508)
+            string fileCon = fileContent.front();
+            createPackets(fileCon, &packets);
 
             // WRITE COMPLETED_TRANSMIT
             sock -> write(msgList[1].c_str(), strlen(msgList[1].c_str())+1); 
-            *GRADING << "File: " << file << " transmission complete, waiting "
+            *GRADING << "File: " << fileName << " transmission complete, waiting "
                 << "for end-to-end check, attempt " << end_to_end_attempt 
                 << endl;
 
             // WRITE FILE HASH
             sock -> write(shaCodes[file_num].c_str(), strlen(shaCodes[file_num].c_str())+1); 
-            //printFileHash((unsigned char *)shaCodes[file_num].c_str(), (char *)file.c_str());
+            //printFileHash((unsigned char *)shaCodes[file_num].c_str(), (char *)fileName.c_str());
 
             // READ FILE HASH
             readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
@@ -150,7 +159,7 @@ int main(int argc, char *argv[]) {
             // If received file hash is correct, send confirmation
             if (strcmp(incomingMessage, shaCodes[file_num].c_str()) == 0) {
                 //printf("1 Correct checksum\n");
-                cout << "File: " << file << " end-to-end check SUCCEEDED -- "
+                cout << "File: " << fileName << " end-to-end check SUCCEEDED -- "
                     << "informing server" << endl;
                 sock -> write(msgList[2].c_str(), strlen(msgList[2].c_str())+1);
                 end_to_end_attempt = 0;
@@ -158,16 +167,16 @@ int main(int argc, char *argv[]) {
             } 
             // If received WRONG_CHECKSUM, retry file transmission
             else if (strcmp(incomingMessage, msgList[3].c_str()) == 0) {
-                *GRADING << "File: " << file << " end-to-end check failed, "
+                *GRADING << "File: " << fileName << " end-to-end check failed, "
                     << "attempt " << ++end_to_end_attempt << endl;
                 if (end_to_end_attempt < 5) {
-                    cout << "File: " << file << " end-to-end check FAILS -- "
+                    cout << "File: " << fileName << " end-to-end check FAILS -- "
                         << "retrying" << endl;
                     ++transmission_attempt;
                     continue;
                 }
                 else { 
-                    cout << "File: " << file << " end-to-end check FAILS -- "
+                    cout << "File: " << fileName << " end-to-end check FAILS -- "
                         << "giving up" << endl;
                     throw C150NetworkException("Something has gone wrong");	
                 }
@@ -193,9 +202,9 @@ int main(int argc, char *argv[]) {
             // If received ACKNOWLEDGEMENT
             if (strcmp(incomingMessage, msgList[4].c_str()) == 0) {
                 //printf("2 Acknowledgement received\n");
-                *GRADING << "File: " << file << " end-to-end check succeeded, "
+                *GRADING << "File: " << fileName << " end-to-end check succeeded, "
                     << "attempt " << confirmation_attempt << endl;
-                files.pop();
+                fileNames.pop();
                 ++file_num;
                 confirmation_attempt = 0;
             }
@@ -224,6 +233,38 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
+void createPackets(string fileCon, vector<char *> *packets) {
+    int packetno = 0;
+    int offset = 0;
+    size_t i;
+    size_t fileSize = fileCon.size();
+    size_t controlSize;
+    
+    cout << "String size " << fileSize << endl;
+    
+    while ((size_t) offset < fileSize) {
+        string control_str = to_string(packetno);
+        while (control_str.size() < 4) {
+            control_str = "0" + control_str;
+        }
+        controlSize = control_str.size();
+        char packet[512] = {0};
+        for (i = 0; i < controlSize; i++) {
+            packet[i] = control_str[i];   
+        }
+        for (i = 0; i < 512 - controlSize; i++) {
+            if (i + offset < fileSize) {
+                packet[i + controlSize] = fileCon[i + offset];       
+            }
+        }
+        for (size_t j = 0; j < 512; j++) {
+            cout << packet[j];
+        }
+        packets->push_back(packet);
+        packetno++;
+        offset += 508;
+    }
+}
 
 void checkMsg(char (&incomingMessage)[512], ssize_t readlen) {
     if (readlen == 0) {
@@ -262,7 +303,7 @@ void checkArgs(int argc, char *argv[]) {
     }
 }
 
-void encryptFileNames(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<string> *files) {
+void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<string> *fileNames, queue<string> *fileContent) {
     struct dirent *sourceFile;
     ifstream *t;
     stringstream *buffer;
@@ -284,7 +325,18 @@ void encryptFileNames(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<
         //printFileHash(obuf, sourceFile->d_name);
         string str_obuf(reinterpret_cast<char*>(obuf),20);
         shaCodes->push_back(str_obuf);
-        files->push(sourceFile->d_name);
+        fileNames->push(sourceFile->d_name);
+        
+        ifstream x(filePath.c_str());
+        string content = "";
+        string str = "";
+        while (std::getline(x, str))
+        {
+            content += str;
+            content.push_back('\n');
+        }
+        fileContent->push(content);
+        
         delete t;
         delete buffer;
     }

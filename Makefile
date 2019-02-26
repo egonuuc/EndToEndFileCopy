@@ -32,7 +32,7 @@
 
 # Do all C++ compies with g++
 CPP = g++
-CPPFLAGS = -g -Wall -Werror -I$(C150LIB)
+CPPFLAGS = -std=c++11 -g -Wall -Werror -I$(C150LIB)
 
 # Where the COMP 150 shared utilities live, including c150ids.a and userports.csv
 # Note that environment variable COMP117 must be set for this to work!
