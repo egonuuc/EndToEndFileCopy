@@ -41,11 +41,13 @@ void setUpDebugLogging(const char *logname, int argc, char *argv[]);
 string makeFileName(string dir, string name);
 void checkDirectory(char *dirname);
 void shaEncrypt(unsigned char *hash, const unsigned char *message);
-void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<string> *fileNames, queue<string> *fileContent);
+void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<string> *fileNames, queue<string> *fileContent, int network_nastiness);
 void printFileHash(unsigned char *hash, char *file_name);
 void checkArgs(int argc, char *argv[]);
 void checkMsg(char (&incomingMessage)[512], ssize_t readlen);
-void createPackets(string fileCon, vector<char *> *packets);
+int createPackets(string fileCon, vector<string> *packets);
+bool isFile(string fname);
+void readFile(int nastiness, string filePath, queue<string> *fileContent);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 //                    Command line arguments
@@ -70,22 +72,24 @@ int main(int argc, char *argv[]) {
     vector<string> shaCodes;
     queue<string> fileNames;
     queue<string> fileContent;
-    vector<char *> packets; 
+    vector<string> packets; 
     int file_num = 0;
     int transmission_attempt = 0, end_to_end_attempt = 0, confirmation_attempt = 0;
+    string pktList[] = {"MISSING", "SEND_MORE", "RECEIVED_ALL"};
     string msgList[] = {"BEGIN_TRANSMIT", "COMPLETED_TRANSMIT", "MATCHED_CHECKSUM", "WRONG_CHECKSUM", "ACKNOWLEDGEMENT"};
+    int totalPacketNum = 0;
+    int oneTime = 0, oneTime2 = 0;
 
     // DO THIS FIRST OR YOUR ASSIGNMENT WON'T BE GRADED!
     GRADEME(argc, argv);
-    
+
     // Check command line arguments
     checkArgs(argc, argv);
     network_nastiness = atoi(argv[2]); // convert command line string to int
     file_nastiness = atoi(argv[3]); // convert command line string to int
     checkDirectory(argv[4]); // make sure source dir exists
-    
+
     (void) network_nastiness; // TODO: to delete
-    (void) file_nastiness; // TODO : to delete
 
     // Set up debug message logging
     setUpDebugLogging("fileclientdebug.txt",argc, argv);
@@ -96,10 +100,10 @@ int main(int argc, char *argv[]) {
         fprintf(stderr,"Error opening source directory %s\n", argv[4]);
         exit(8);
     }
-    preprocessFiles(argv[4], SRC, &shaCodes, &fileNames, &fileContent);
+    preprocessFiles(argv[4], SRC, &shaCodes, &fileNames, &fileContent, file_nastiness);
     closedir(SRC);
- 
- 
+
+
     // Send / receive / print loop
     try {
         // Create the socket
@@ -114,19 +118,112 @@ int main(int argc, char *argv[]) {
 
         while(!fileNames.empty()) {
 
-            // WRITE BEGIN_TRANSMIT:<filename>
+            // WRITE BEGIN_TRANSMIT:<fileName>:<totalPacketNum>
             string fileName = fileNames.front();
+            string fileCon = fileContent.front();
+            totalPacketNum = createPackets(fileCon, &packets);
             //printf("0 File to transmit is %s\n", file.c_str());
-            string initMsg = (msgList[0] + ":" + fileName).c_str();
+            string initMsg = (msgList[0] + ":" + fileName + ":" + to_string(totalPacketNum)).c_str();
             sock -> write(initMsg.c_str(), strlen(initMsg.c_str())+1);
             *GRADING << "File: " << fileName << ", beginning transmission, attempt "
                 << transmission_attempt << endl;
-
-            // TODO - TRANSMIT FILES
+            cout << "**************** BEGIN TRANSMIT ************** " << endl;
+            // TRANSMIT FILES
             // _ _ _ _ 4 chars for control info; 508 chars for file content
-            // number of packets = ceil(fileSize / 508)
-            string fileCon = fileContent.front();
-            createPackets(fileCon, &packets);
+
+            int count = 1;
+            int batchSize = 10;
+            while(1) {
+                if (totalPacketNum <= batchSize) {
+                    while (count <= totalPacketNum) {
+                        cout << packets[count-1] << endl;
+                        sock -> write(packets[count-1].c_str(), strlen(packets[count-1].c_str())+1);
+                        count++;
+                    }
+                    // wait & read to see if packets missing or not
+                    readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
+                    checkMsg(incomingMessage, readlen);
+                    // read MISSING
+                    if (strcmp(incomingMessage, pktList[0].c_str()) == 0) {
+                        cout << " ************ read MISSING **********" << endl;
+                        // decrement count once only
+                        if (oneTime++ == 0) {
+                            count = 1;
+                        }
+                        // resend
+                        continue;
+                    // read RECEIVED_ALL
+                    } else if (strcmp(incomingMessage, pktList[2].c_str()) == 0) {
+                        cout << " ************ read RECEIVED ALL **********" << endl;
+                        oneTime = 0;
+                        oneTime2 = 0;
+                        count = 1;
+                        break;
+                    } else {
+                        throw C150NetworkException("Something has gone wrong");	
+                    }
+                } else {
+                    while (count < totalPacketNum) {
+                        int goUpTo = count + batchSize; 
+                        while (count < goUpTo) {
+                            cout << packets[count-1] << endl;
+                            sock -> write(packets[count-1].c_str(), strlen(packets[count-1].c_str())+1);
+                            count++;
+                        }
+                        // wait & read to see if packets missing or not
+                        readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
+                        checkMsg(incomingMessage, readlen);
+                        
+                        // read MISSING
+                        if (strcmp(incomingMessage, pktList[0].c_str()) == 0) {
+                            cout << " ************ read MISSING **********" << endl;
+                            if (oneTime2++ == 0) {
+                                count -= batchSize+1;
+                            }
+                            continue;
+                        // read SEND_MORE
+                        } else if (strcmp(incomingMessage, pktList[1].c_str()) == 0) {
+                            cout << " ************ read SEND MORE **********" << endl;
+                            cout << " count : " << count << endl;
+                            cout << " packets left to send : " << totalPacketNum - count << endl;
+                            cout << " batch size : " << batchSize << endl;
+                            if (totalPacketNum - count <= batchSize) {
+                                // same as base case
+                                while (count <= totalPacketNum) {
+                                    cout << packets[count-1] << endl;
+                                    sock -> write(packets[count-1].c_str(), strlen(packets[count-1].c_str())+1);
+                                    count++;
+                                }
+                                // wait & read to see if packets missing or not
+                                readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
+                                checkMsg(incomingMessage, readlen);
+                                // read MISSING
+                                if (strcmp(incomingMessage, pktList[0].c_str()) == 0) {
+                                    cout << " ************ read MISSING **********" << endl;
+                                    // decrement count once only
+                                    if (oneTime++ == 0) {
+                                        count -= batchSize+1;
+                                    }
+                                    // resend
+                                    continue;
+                                // read RECEIVED_ALL
+                                } else if (strcmp(incomingMessage, pktList[2].c_str()) == 0) {
+                                    cout << " ************ read RECEIVED ALL **********" << endl;
+                                    oneTime = 0;
+                                    oneTime2 = 0;
+                                    count = 1;
+                                    break;
+                                } else {
+                                    throw C150NetworkException("S2omething has gone wrong");	
+                                }
+                            } else {
+                                continue; // problem
+                            }
+                        }
+                    }
+                }
+                break;
+            }
 
             // WRITE COMPLETED_TRANSMIT
             sock -> write(msgList[1].c_str(), strlen(msgList[1].c_str())+1); 
@@ -204,8 +301,13 @@ int main(int argc, char *argv[]) {
                 //printf("2 Acknowledgement received\n");
                 *GRADING << "File: " << fileName << " end-to-end check succeeded, "
                     << "attempt " << confirmation_attempt << endl;
-                fileNames.pop();
                 ++file_num;
+                oneTime = 0;
+                oneTime2 = 0;
+                count = 1;
+                fileContent.pop();
+                fileNames.pop();
+                packets.clear();
                 confirmation_attempt = 0;
             }
             // If received anything else, resend confirmation
@@ -220,7 +322,7 @@ int main(int argc, char *argv[]) {
                     throw C150NetworkException("Something has gone wrong2");	
             }
         }
-    delete sock;
+        delete sock;
     }
     //  Handle networking errors -- for now, just print message and give up!
     catch (C150NetworkException e) {
@@ -233,37 +335,43 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-void createPackets(string fileCon, vector<char *> *packets) {
+int createPackets(string fileCon, vector<string> *packets) {
     int packetno = 0;
     int offset = 0;
     size_t i;
-    size_t fileSize = fileCon.size();
-    size_t controlSize;
-    
-    cout << "String size " << fileSize << endl;
-    
+    size_t fileSize = fileCon.length();
+    size_t controlSize = 4;
+    size_t count = 0;
+
+    // cout << "String size " << fileSize << endl;
     while ((size_t) offset < fileSize) {
         string control_str = to_string(packetno);
-        while (control_str.size() < 4) {
+        while (control_str.size() < controlSize) {
             control_str = "0" + control_str;
         }
-        controlSize = control_str.size();
-        char packet[512] = {0};
+        char packet[512] = {'\0'};
         for (i = 0; i < controlSize; i++) {
             packet[i] = control_str[i];   
         }
-        for (i = 0; i < 512 - controlSize; i++) {
-            if (i + offset < fileSize) {
-                packet[i + controlSize] = fileCon[i + offset];       
+        for (i = 0; i < 511 - controlSize; i++) {
+            if (i + offset >= fileSize) {
+                cout << " ***** i " << i << endl;
+                cout << " ***** offset " << offset << endl;
+                cout << " ***** filesize " << fileSize << endl;
+                int ind = i + controlSize;
+                cout << " ADDING AT " << ind << endl;
+                packet[ind] = '\0';
+                break;
             }
+            packet[i + controlSize] = fileCon[i + offset];  
         }
-        for (size_t j = 0; j < 512; j++) {
-            cout << packet[j];
-        }
-        packets->push_back(packet);
+        string p(packet);
+        packets->push_back(p);
         packetno++;
-        offset += 508;
+        offset += 507;
+        count++;
     }
+    return packetno;
 }
 
 void checkMsg(char (&incomingMessage)[512], ssize_t readlen) {
@@ -302,8 +410,49 @@ void checkArgs(int argc, char *argv[]) {
         exit(4);
     }
 }
+void readFile(int nastiness, string filePath, queue<string> *fileContent){
+    void *fopenretval;
+    size_t len;
+    string errorString;
+    char *buffer;
+    struct stat statbuf;  
+    size_t sourceSize;
 
-void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<string> *fileNames, queue<string> *fileContent) {
+    try {
+        if (lstat(filePath.c_str(), &statbuf) != 0) {
+            exit(20);
+        }
+
+        sourceSize = statbuf.st_size;
+        buffer = (char *)malloc(sourceSize+1);
+        NASTYFILE inputFile(nastiness);    
+        fopenretval = inputFile.fopen(filePath.c_str(), "rb");  
+
+        if (fopenretval == NULL) {
+            exit(12);
+        }
+
+        len = inputFile.fread(buffer, 1, sourceSize);
+        if (len != sourceSize) {
+            exit(16);
+        }
+        if (inputFile.fclose() != 0) {
+            exit(16);
+        }
+        buffer[sourceSize] = '\0';
+        string content(buffer);
+        fileContent->push(content);
+        free(buffer);
+
+        cout << " ******** SOURCE SIZE " << sourceSize << endl;
+        cout << " ******** STRING CONTENT SIZE " << content.length() << endl;
+    
+    }   catch (C150Exception e) {
+        cerr << "nastyfiletest:copyfile(): Caught C150Exception: " << 
+            e.formattedExplanation() << endl;
+    }
+}
+void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<string> *fileNames, queue<string> *fileContent, int nastiness) {
     struct dirent *sourceFile;
     ifstream *t;
     stringstream *buffer;
@@ -318,6 +467,10 @@ void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<s
             continue;
 
         string filePath = makeFileName(filepath, sourceFile->d_name);
+        if (!isFile(filePath)) {
+            continue;
+        }
+
         t = new ifstream(filePath.c_str());
         buffer = new stringstream;
         *buffer << t->rdbuf();
@@ -326,19 +479,11 @@ void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<s
         string str_obuf(reinterpret_cast<char*>(obuf),20);
         shaCodes->push_back(str_obuf);
         fileNames->push(sourceFile->d_name);
-        
-        ifstream x(filePath.c_str());
-        string content = "";
-        string str = "";
-        while (std::getline(x, str))
-        {
-            content += str;
-            content.push_back('\n');
-        }
-        fileContent->push(content);
-        
+
         delete t;
         delete buffer;
+
+        readFile(nastiness, filePath, fileContent);
     }
 }
 
@@ -425,6 +570,30 @@ void checkAndPrintMessage(ssize_t readlen, char *msg, ssize_t bufferlen) {
             s.c_str());
 
     printf("Response received is \"%s\"\n", s.c_str());
+}
+
+// ------------------------------------------------------
+//
+//                   isFile
+//
+//  Make sure the supplied file is not a directory or
+//  other non-regular file.
+//     
+// ------------------------------------------------------
+
+bool isFile(string fname) {
+    const char *filename = fname.c_str();
+    struct stat statbuf;  
+    if (lstat(filename, &statbuf) != 0) {
+        fprintf(stderr,"isFile: Error stating supplied source file %s\n", filename);
+        return false;
+    }
+
+    if (!S_ISREG(statbuf.st_mode)) {
+        fprintf(stderr,"isFile: %s exists but is not a regular file\n", filename);
+        return false;
+    }
+    return true;
 }
 
 

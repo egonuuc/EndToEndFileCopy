@@ -41,6 +41,10 @@ bool matchFileHash(char *filepath, DIR *TGT, C150DgmSocket *sock, char *incoming
 void printFileHash(unsigned char *hash, char *file_name);
 void checkArgs(int argc, char *argv[]);
 void checkMsg(char (&incomingMessage)[512], ssize_t readlen);
+bool isFile(string fname);
+void writeFile(int nastiness, char *targetDir, string fileName, vector<string> *fileContent);
+void storePacket(char *incomingMessage, vector<string> *fileContent);
+bool checkMissing(vector<string> *fileContent, int start, int end);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 //
@@ -55,9 +59,13 @@ int main(int argc, char *argv[]) {
     int file_nastiness;
     DIR *TGT;
     string file;
+    string pktList[] = {"MISSING", "SEND_MORE", "RECEIVED_ALL"};
     string msgList[] = {"BEGIN_TRANSMIT", "COMPLETED_TRANSMIT", "MATCHED_CHECKSUM", "WRONG_CHECKSUM", "ACKNOWLEDGEMENT"};
     ssize_t readlen;
     bool matched;
+    vector<string> fileContent; //(1000);
+    int totalPacketNum;
+    int oneTime = 0, oneTime2 = 0;
 
     // DO THIS FIRST OR YOUR ASSIGNMENT WON'T BE GRADED!
     GRADEME(argc, argv);
@@ -68,8 +76,6 @@ int main(int argc, char *argv[]) {
     network_nastiness = atoi(argv[1]); // convert command line string to integer
     file_nastiness = atoi(argv[2]);    // convert command line string to integer
     
-    (void) file_nastiness; // TODO : to delete
-
     //  Set up debug message logging. Added indents to server only, not
     //  client, so can merge logs and tell server and client entries apart
     //    cat fileserverdebug.txt fileserverclient.txt | sort
@@ -90,16 +96,128 @@ int main(int argc, char *argv[]) {
             readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1); // took out -1
             checkMsg(incomingMessage, readlen);
 
-            // If received BEGIN_TRANSMIT:<filename>
+            // If received BEGIN_TRANSMIT:<fileName>:<totalPacketNum>
             string delimiter = ":";
             string s(incomingMessage);
             size_t pos = s.find(delimiter);
             string initMsg = s.substr(0, pos);
             if (strcmp(msgList[0].c_str(), initMsg.c_str()) == 0) {
-                file = s.substr(pos+1, string::npos);
+                s.erase(0, pos + delimiter.length());
+                pos = s.find(delimiter);
+                file = s.substr(0, pos);
+                s.erase(0, pos + delimiter.length());
+                totalPacketNum = atoi(s.substr(0, string::npos).c_str());
                 //printf("0 Transmission begins\n");
                 *GRADING << "File: " << file << " starting to receive file" << endl;
-            } 
+                
+                int count = 1;
+                int batchSize = 10;
+                bool missing = false;
+                while(1) {
+                    if (totalPacketNum < batchSize) {
+                        cout << " *********** READ ************ " << endl;
+                        while (count <= totalPacketNum) {
+                            readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
+                            checkMsg(incomingMessage, readlen);
+                            cout << incomingMessage << endl;
+                            storePacket(incomingMessage, &fileContent);
+                            count++;
+                        }
+                        missing = checkMissing(&fileContent, 0, totalPacketNum-1);
+                        if (missing == true) {
+                            // write MISSING
+                            cout << " *********** write MISSING ************" << endl;
+                            sock->write(pktList[0].c_str(), strlen(pktList[0].c_str())+1);
+                            // decrement count once only
+                            if (oneTime++ == 0) {
+                                count = 1;
+                                missing = false;                 
+                            }
+                            // go back to while loop
+                            continue;
+                        } else {
+                            // write RECEIVED_ALL
+                            cout << " *********** write RECEIVED_ALL ************" << endl;
+                            sock->write(pktList[2].c_str(), strlen(pktList[2].c_str())+1);
+                            missing = false;
+                            oneTime = 0;
+                            oneTime2 = 0;
+                            count = 1;
+                            writeFile(file_nastiness, argv[3], file, &fileContent);
+                            fileContent.clear();
+                            initMsg = "";
+                            break;
+                        }
+                    } else {
+                        while (count <= totalPacketNum) {
+                            int goUpTo = count + batchSize;
+                            while (count < goUpTo) {
+                                readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
+                                cout << " *********** READ1 ************" << endl;
+                                checkMsg(incomingMessage, readlen);
+                                cout << incomingMessage << endl;
+                                storePacket(incomingMessage, &fileContent);
+                                count++;
+                            }
+                            missing = checkMissing(&fileContent, 0, count-1);
+                            if (missing == true) {
+                                // write MISSING
+                                cout << " *********** write MISSING ************" << endl;
+                                sock->write(pktList[0].c_str(), strlen(pktList[0].c_str())+1);
+                                // decrement count once only
+                                if (oneTime2++ == 0) {
+                                    count -= batchSize + 1;
+                                    missing = false;                 
+                                }
+                                // go back to while loop
+                                continue;
+                            } else {
+                                // write SEND_MORE
+                                cout << " *********** write SEND MORE ************" << endl;
+                                //missing = false;
+                                sock->write(pktList[1].c_str(), strlen(pktList[1].c_str())+1);
+                                //continue;
+                            }
+                            if (totalPacketNum - count <= batchSize) {
+                                // same as base case
+                                while (count <= totalPacketNum) {
+                                    readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
+                                    cout << " *********** READ2 ************" << endl;
+                                    checkMsg(incomingMessage, readlen);
+                                    cout << incomingMessage << endl;
+                                    storePacket(incomingMessage, &fileContent);
+                                    count++;
+                                }
+                                missing = checkMissing(&fileContent, 0, totalPacketNum-1);
+                                if (missing == true) {
+                                    // write MISSING
+                                    cout << " *********** write MISSING ************" << endl;
+                                    sock->write(pktList[0].c_str(), strlen(pktList[0].c_str())+1);
+                                    // decrement count once only
+                                    if (oneTime++ == 0) {
+                                        count -= batchSize + 1;
+                                        missing = false;                 
+                                    }
+                                    // go back to while loop
+                                    continue;
+                                } else {
+                                    // write RECEIVED_ALL
+                                    cout << " *********** write RECEIVED ALL ************" << endl;
+                                    sock->write(pktList[2].c_str(), strlen(pktList[2].c_str())+1);
+                                    oneTime = 0;
+                                    oneTime2 = 0;
+                                    missing = false;
+                                    writeFile(file_nastiness, argv[3], file, &fileContent);
+                                    fileContent.clear();
+                                    initMsg = "";
+                                    break;
+                                }
+                            } // else??
+                        }
+                        break;
+                    }
+                }
+            }
             // If received COMPLETED_TRANSMIT
             else if (strcmp(msgList[1].c_str(), incomingMessage) == 0) {
                 //printf("1 Transmission completed\n");
@@ -143,6 +261,39 @@ int main(int argc, char *argv[]) {
         cerr << argv[0] << ": caught C150NetworkException: " << e.formattedExplanation() << endl;
     }
     return 4;
+}
+
+bool checkMissing(vector<string> *fileContent, int start, int end) {
+    for (int i = start; i < end; i++) {
+        if (fileContent->at(i) == "") {
+            return true;
+        }
+    }
+    return false;
+}
+
+
+void storePacket(char *incomingMessage, vector<string> *fileContent) {
+    string control_str = "";
+    int control_index;
+    int i;
+    vector<string>::iterator index;
+
+    for (i = 0; i < 4; i++) {
+        control_str += incomingMessage[i];   
+    }
+    while (control_str.length() > 1) {
+        if (control_str[0] != '0')
+            break;
+        control_str.erase(0, 1);
+    }
+    control_index = atoi(control_str.c_str());
+    //cout << "control: " << control_index << endl;
+    
+    string fileCon(&incomingMessage[4], &incomingMessage[511]);
+    index = (fileContent->begin() + control_index);
+    fileContent->insert(index, fileCon);
+    //cout << fileContent->at(control_index) <<endl;
 }
 
 void checkMsg(char (&incomingMessage)[512], ssize_t readlen) {
@@ -230,6 +381,45 @@ void shaEncrypt(unsigned char *hash, const unsigned char *message) {
     SHA1(message, msg.length(), hash);
 }
 
+void writeFile(int nastiness, char *targetDir, string fileName, vector<string> *fileContent) {
+    size_t size = fileContent->size();
+    string fileCon = "";
+    for (size_t i = 0; i < size; i++) {
+        fileCon += fileContent->at(i);
+    }
+
+    size_t len;
+    string errorString;
+    char *buffer;
+    size_t sourceSize = fileCon.length();
+
+    buffer = (char *)malloc(sourceSize);
+    strncpy(buffer, fileCon.c_str(), sourceSize);
+    string targetName = makeFileName(targetDir, fileName + ".TMP");
+    try {
+        NASTYFILE outputFile(nastiness); 
+        outputFile.fopen(targetName.c_str(), "wb");  
+        len = outputFile.fwrite(buffer, 1, sourceSize);
+        if (len != sourceSize) {
+          cerr << "Error writing file " << targetName << 
+              "  errno=" << strerror(errno) << endl;
+          exit(16);
+        }
+      
+        if (outputFile.fclose() == 0 ) {
+           cout << "Finished writing file " << targetName <<endl;
+        } else {
+          cerr << "Error closing output file " << targetName << 
+              " errno=" << strerror(errno) << endl;
+          exit(16);
+        }
+        free(buffer);
+    } catch (C150Exception e) {
+        cerr << "nastyfiletest:copyfile(): Caught C150Exception: " << 
+           e.formattedExplanation() << endl;
+    }
+}
+
 // ------------------------------------------------------
 //                   makeFileName
                 // open target dir
@@ -266,6 +456,20 @@ void checkDirectory(char *dirname) {
     }
 }
 
+bool isFile(string fname) {
+    const char *filename = fname.c_str();
+    struct stat statbuf;  
+    if (lstat(filename, &statbuf) != 0) {
+        fprintf(stderr,"isFile: Error stating supplied source file %s\n", filename);
+        return false;
+    }
+
+    if (!S_ISREG(statbuf.st_mode)) {
+        fprintf(stderr,"isFile: %s exists but is not a regular file\n", filename);
+        return false;
+    }
+    return true;
+}
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 //                     setUpDebugLogging
