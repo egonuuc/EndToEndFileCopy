@@ -75,10 +75,9 @@ int main(int argc, char *argv[]) {
     vector<string> packets; 
     int file_num = 0;
     int transmission_attempt = 0, end_to_end_attempt = 0, confirmation_attempt = 0;
-    string pktList[] = {"MISSING", "SEND_MORE", "RECEIVED_ALL"};
-    string msgList[] = {"BEGIN_TRANSMIT", "COMPLETED_TRANSMIT", "MATCHED_CHECKSUM", "WRONG_CHECKSUM", "ACKNOWLEDGEMENT"};
+    string pktList[] = {"SEND", "RECEIVED_ALL"};
+    string msgList[] = {"BEGIN_TRANSMIT", "COMPLETED_TRANSMIT", "MATCHED_CHECKSUM", "WRONG_CHECKSUM", "ACKNOWLEDGEMENT", "REBEGIN"};
     int totalPacketNum = 0;
-    int oneTime = 0, oneTime2 = 0;
 
     // DO THIS FIRST OR YOUR ASSIGNMENT WON'T BE GRADED!
     GRADEME(argc, argv);
@@ -122,141 +121,75 @@ int main(int argc, char *argv[]) {
             string fileName = fileNames.front();
             string fileCon = fileContent.front();
             totalPacketNum = createPackets(fileCon, &packets);
-            //printf("0 File to transmit is %s\n", file.c_str());
             string initMsg = (msgList[0] + ":" + fileName + ":" + to_string(totalPacketNum)).c_str();
             sock -> write(initMsg.c_str(), strlen(initMsg.c_str())+1);
             *GRADING << "File: " << fileName << ", beginning transmission, attempt "
                 << transmission_attempt << endl;
-            cout << "**************** BEGIN TRANSMIT ************** " << endl;
-            // TRANSMIT FILES
-            // _ _ _ _ 4 chars for control info; 508 chars for file content
-
-            int count = 1;
-            int batchSize = 10;
+            cout << "*****BEGIN TRANSMIT. TOTAL PACKET NUM " << totalPacketNum << endl;
+            
+            int readAttempt = 0;
+            int MAXATTEMPT = 5000;
+            int requestedPacketNum = 0;
+            int oneTimeOnly = 0;
+            /* don't bother keeping count of how many packets are sent because may
+             * need to attempt sending many times
+             */
             while(1) {
-                if (totalPacketNum <= batchSize) {
-                    while (count <= totalPacketNum) {
-                        cout << packets[count-1] << endl;
-                        sock -> write(packets[count-1].c_str(), strlen(packets[count-1].c_str())+1);
-                        count++;
-                    }
-                    // wait & read to see if packets missing or not
-                    readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
-                    checkMsg(incomingMessage, readlen);
-                    // read MISSING
-                    if (strcmp(incomingMessage, pktList[0].c_str()) == 0) {
-                        cout << " ************ read MISSING **********" << endl;
-                        // decrement count once only
-                        if (oneTime++ == 0) {
-                            count = 1;
-                        }
-                        // resend
-                        continue;
-                    // read RECEIVED_ALL
-                    } else if (strcmp(incomingMessage, pktList[2].c_str()) == 0) {
-                        cout << " ************ read RECEIVED ALL **********" << endl;
-                        oneTime = 0;
-                        oneTime2 = 0;
-                        count = 1;
-                        break;
-                    } else {
-                        throw C150NetworkException("Something has gone wrong");	
-                    }
-                } else {
-                    while (count < totalPacketNum) {
-                        int goUpTo = count + batchSize; 
-                        while (count < goUpTo) {
-                            cout << packets[count-1] << endl;
-                            sock -> write(packets[count-1].c_str(), strlen(packets[count-1].c_str())+1);
-                            count++;
-                        }
-                        // wait & read to see if packets missing or not
-                        readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
-                        checkMsg(incomingMessage, readlen);
-                        
-                        // read MISSING
-                        if (strcmp(incomingMessage, pktList[0].c_str()) == 0) {
-                            cout << " ************ read MISSING **********" << endl;
-                            if (oneTime2++ == 0) {
-                                count -= batchSize+1;
-                            }
-                            continue;
-                        // read SEND_MORE
-                        } else if (strcmp(incomingMessage, pktList[1].c_str()) == 0) {
-                            cout << " ************ read SEND MORE **********" << endl;
-                            cout << " count : " << count << endl;
-                            cout << " packets left to send : " << totalPacketNum - count << endl;
-                            cout << " batch size : " << batchSize << endl;
-                            if (totalPacketNum - count <= batchSize) {
-                                // same as base case
-                                while (count <= totalPacketNum) {
-                                    cout << packets[count-1] << endl;
-                                    sock -> write(packets[count-1].c_str(), strlen(packets[count-1].c_str())+1);
-                                    count++;
-                                }
-                                // wait & read to see if packets missing or not
-                                readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
-                                checkMsg(incomingMessage, readlen);
-                                // read MISSING
-                                if (strcmp(incomingMessage, pktList[0].c_str()) == 0) {
-                                    cout << " ************ read MISSING **********" << endl;
-                                    // decrement count once only
-                                    if (oneTime++ == 0) {
-                                        count -= batchSize+1;
-                                    }
-                                    // resend
-                                    continue;
-                                // read RECEIVED_ALL
-                                } else if (strcmp(incomingMessage, pktList[2].c_str()) == 0) {
-                                    cout << " ************ read RECEIVED ALL **********" << endl;
-                                    oneTime = 0;
-                                    oneTime2 = 0;
-                                    count = 1;
-                                    break;
-                                } else {
-                                    throw C150NetworkException("S2omething has gone wrong");	
-                                }
-                            } else {
-                                continue; // problem
-                            }
-                        }
-                    }
+                if (oneTimeOnly++ == 0) {
+                    sock -> write(packets[requestedPacketNum].c_str(), strlen(packets[requestedPacketNum].c_str())+1);
                 }
-                break;
+                readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
+                timeout = sock -> timedout();
+                if (timeout == true && requestedPacketNum == 0) {
+                    sock -> write(initMsg.c_str(), strlen(initMsg.c_str())+1);
+                }
+                if (timeout == true && ++readAttempt < MAXATTEMPT) { 
+                    ++readAttempt;
+                    cout << " ************ write packet " << requestedPacketNum << " again **********" << endl;
+                    sock -> write(packets[requestedPacketNum].c_str(), strlen(packets[requestedPacketNum].c_str())+1);
+                    continue;
+                }
+                if (timeout == true && readAttempt >= MAXATTEMPT) { 
+                    throw C150NetworkException("Server is not working well.");	
+                }
+                checkMsg(incomingMessage, readlen);
+                
+                string delimiter = ":";
+                string s(incomingMessage);
+                size_t pos = s.find(delimiter);
+                string msg = s.substr(0, pos);
+                if (strcmp(pktList[0].c_str(), msg.c_str()) == 0) {
+                    s.erase(0, pos + delimiter.length());
+                    pos = s.find(delimiter);
+                    requestedPacketNum = atoi(s.substr(0, string::npos).c_str());
+                    sock -> write(packets[requestedPacketNum].c_str(), strlen(packets[requestedPacketNum].c_str())+1);
+                } else if (strcmp(incomingMessage, pktList[1].c_str()) == 0) {
+                    oneTimeOnly = 0;
+                    readAttempt = 0;
+                    break;
+                }
             }
-
-            // WRITE COMPLETED_TRANSMIT
-            sock -> write(msgList[1].c_str(), strlen(msgList[1].c_str())+1); 
-            *GRADING << "File: " << fileName << " transmission complete, waiting "
-                << "for end-to-end check, attempt " << end_to_end_attempt 
-                << endl;
 
             // WRITE FILE HASH
             sock -> write(shaCodes[file_num].c_str(), strlen(shaCodes[file_num].c_str())+1); 
-            //printFileHash((unsigned char *)shaCodes[file_num].c_str(), (char *)fileName.c_str());
 
             // READ FILE HASH
             readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
-            checkMsg(incomingMessage, readlen);
-            // Determine if timeout has occurred (T) or if packet was read (F)
             timeout = sock -> timedout();
-
-            // If a timeout has occurred, retry file transmission
-            // (after 5 tries, throws a C150NetworkException)
-            if (timeout == true && ++end_to_end_attempt < 5) { 
-                //printf("time out\n");
+            if (timeout == true && ++end_to_end_attempt < MAXATTEMPT) { 
                 ++end_to_end_attempt;
                 ++transmission_attempt;
+                sock -> write(shaCodes[file_num].c_str(), strlen(shaCodes[file_num].c_str())+1); 
                 continue;
             } 
-            if (timeout == true && end_to_end_attempt >= 5) { 
-                throw C150NetworkException("Sever is down");	
+            if (timeout == true && end_to_end_attempt >= MAXATTEMPT) { 
+                throw C150NetworkException("Server is down");	
             }
+            checkMsg(incomingMessage, readlen);
 
             // If received file hash is correct, send confirmation
             if (strcmp(incomingMessage, shaCodes[file_num].c_str()) == 0) {
-                //printf("1 Correct checksum\n");
-                cout << "File: " << fileName << " end-to-end check SUCCEEDED -- "
+                cout << "File: " << fileName << " file hash matched -- "
                     << "informing server" << endl;
                 sock -> write(msgList[2].c_str(), strlen(msgList[2].c_str())+1);
                 end_to_end_attempt = 0;
@@ -266,7 +199,7 @@ int main(int argc, char *argv[]) {
             else if (strcmp(incomingMessage, msgList[3].c_str()) == 0) {
                 *GRADING << "File: " << fileName << " end-to-end check failed, "
                     << "attempt " << ++end_to_end_attempt << endl;
-                if (end_to_end_attempt < 5) {
+                if (end_to_end_attempt < MAXATTEMPT) {
                     cout << "File: " << fileName << " end-to-end check FAILS -- "
                         << "retrying" << endl;
                     ++transmission_attempt;
@@ -281,42 +214,41 @@ int main(int argc, char *argv[]) {
 
             // READ ACKNOWLEDGEMENT
             readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
-            checkMsg(incomingMessage, readlen);
-            // Determine if timeout has occurred (T) or if packet was read (F)
-            timeout = sock -> timedout();
-
-            // If a timeout has occurred, resend confirmation to the server 
-            // (after 5 tries, throws a C150NetworkException)
-            if (timeout == true && ++confirmation_attempt < 5) { 
+            if (timeout == true && ++confirmation_attempt < MAXATTEMPT) { 
                 sock -> write(msgList[2].c_str(), strlen(msgList[2].c_str())+1);
                 ++confirmation_attempt;
                 continue;
             }
-            if (timeout == true && confirmation_attempt >= 5) { 
-                throw C150NetworkException("Sever is down");	
+            if (timeout == true && confirmation_attempt >= MAXATTEMPT) { 
+                throw C150NetworkException("Server is down");	
             }
+            checkMsg(incomingMessage, readlen);
 
             // If received ACKNOWLEDGEMENT
             if (strcmp(incomingMessage, msgList[4].c_str()) == 0) {
-                //printf("2 Acknowledgement received\n");
+                printf("2 Acknowledgement received\n");
                 *GRADING << "File: " << fileName << " end-to-end check succeeded, "
                     << "attempt " << confirmation_attempt << endl;
-                ++file_num;
-                oneTime = 0;
-                oneTime2 = 0;
-                count = 1;
-                fileContent.pop();
-                fileNames.pop();
-                packets.clear();
-                confirmation_attempt = 0;
+                if (strcmp(fileNames.front().c_str(), fileName.c_str()) == 0) {
+                    ++file_num;
+                    fileContent.pop();
+                    fileNames.pop();
+                    packets.clear();
+                    confirmation_attempt = 0;
+                }
             }
+            /*
+            // If BEGIN_TRANSMIT for next file got lost
+            else if (strcmp(incomingMessage, msgList[5].c_str()) == 0) {
+                string fileName = fileNames.front();
+                string fileCon = fileContent.front();
+                totalPacketNum = createPackets(fileCon, &packets);
+                string initMsg = (msgList[0] + ":" + fileName + ":" + to_string(totalPacketNum)).c_str();
+                sock -> write(initMsg.c_str(), strlen(initMsg.c_str())+1);
+            }*/
             // If received anything else, resend confirmation
             else {
-                printf("2 Something has gone wrong\n");
-                //printFileHash((unsigned char *)incomingMessage, (char *)file.c_str());
-                //printFileHash((unsigned char *)shaCodes[file_num].c_str(), (char *)file.c_str());
-                //checkAndPrintMessage(readlen, incomingMessage, sizeof(incomingMessage));
-                if (++confirmation_attempt < 5)
+                if (++confirmation_attempt < MAXATTEMPT)
                     sock -> write(msgList[2].c_str(), strlen(msgList[2].c_str())+1);
                 else 
                     throw C150NetworkException("Something has gone wrong2");	
@@ -335,15 +267,15 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
+
 int createPackets(string fileCon, vector<string> *packets) {
     int packetno = 0;
     int offset = 0;
     size_t i;
     size_t fileSize = fileCon.length();
-    size_t controlSize = 4;
+    size_t controlSize = 5;
     size_t count = 0;
 
-    // cout << "String size " << fileSize << endl;
     while ((size_t) offset < fileSize) {
         string control_str = to_string(packetno);
         while (control_str.size() < controlSize) {
@@ -355,11 +287,7 @@ int createPackets(string fileCon, vector<string> *packets) {
         }
         for (i = 0; i < 511 - controlSize; i++) {
             if (i + offset >= fileSize) {
-                cout << " ***** i " << i << endl;
-                cout << " ***** offset " << offset << endl;
-                cout << " ***** filesize " << fileSize << endl;
                 int ind = i + controlSize;
-                cout << " ADDING AT " << ind << endl;
                 packet[ind] = '\0';
                 break;
             }
@@ -368,7 +296,7 @@ int createPackets(string fileCon, vector<string> *packets) {
         string p(packet);
         packets->push_back(p);
         packetno++;
-        offset += 507;
+        offset += (511 - controlSize);
         count++;
     }
     return packetno;
@@ -443,10 +371,6 @@ void readFile(int nastiness, string filePath, queue<string> *fileContent){
         string content(buffer);
         fileContent->push(content);
         free(buffer);
-
-        cout << " ******** SOURCE SIZE " << sourceSize << endl;
-        cout << " ******** STRING CONTENT SIZE " << content.length() << endl;
-    
     }   catch (C150Exception e) {
         cerr << "nastyfiletest:copyfile(): Caught C150Exception: " << 
             e.formattedExplanation() << endl;
