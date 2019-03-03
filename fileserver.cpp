@@ -137,7 +137,6 @@ int main(int argc, char *argv[]) {
                 int MAXATTEMPT = 5000;
                 int control_index = 0;
                 while(1) {
-                    //cout << " *********** READ ************ " << endl;
                     /* scenarios :
                      *      no packet was received - try five times
                      *      two duplicate packets were received - ignore second one
@@ -167,7 +166,7 @@ int main(int argc, char *argv[]) {
                         continue;
                     }
                     if (timeout == true && readAttempt >= MAXATTEMPT) { 
-                        throw C150NetworkException("Server is not working well.");	
+                        throw C150NetworkException("Server is not working well.");  
                     }
                     
                     checkMsg(incomingMessage, readlen);
@@ -234,7 +233,12 @@ int main(int argc, char *argv[]) {
     return 4;
 }
 
-
+// ------------------------------------------------------
+// //                  extractControlInfo
+// //
+// //  Strips out the contol information from the package
+// //  and uses that to assign a correct packet number
+// // ------------------------------------------------------
 void extractControlInfo(char *incomingMessage, int *control_index) {
     string control_str = "";
     for (int i = 0; i < 5; i++) {
@@ -248,7 +252,12 @@ void extractControlInfo(char *incomingMessage, int *control_index) {
     *control_index = atoi(control_str.c_str());
 }
 
-// must check and make sure content is stored at proper index
+// ------------------------------------------------------
+// //                   storePacket
+// //
+// //  Stores the packet in its correct spot in
+// //  the file content structure
+// // ------------------------------------------------------
 void storePacket(char *incomingMessage, vector<string> *fileContent, int control_index, int *packetTracker) {
     vector<string>::iterator index;
     string fileCon = "";
@@ -259,10 +268,15 @@ void storePacket(char *incomingMessage, vector<string> *fileContent, int control
     }
     index = (fileContent->begin() + control_index);
     fileContent->insert(index, fileCon);
-    //cout << fileContent->at(control_index) <<endl;
     packetTracker[control_index] = 1;
 }
 
+// ------------------------------------------------------
+// //                   checkMsg
+// //
+// //  Validates the incoming Message is a null terminated
+// // string
+// // ------------------------------------------------------
 void checkMsg(char (&incomingMessage)[512], ssize_t readlen) {
     if (readlen == 0) {
         return;
@@ -276,8 +290,12 @@ void checkMsg(char (&incomingMessage)[512], ssize_t readlen) {
     }
 }
 
+// ------------------------------------------------------
+// //                   checkArgs
+// //
+// //  Validates the arguments from the command line
+// // ------------------------------------------------------
 void checkArgs(int argc, char *argv[]) {
-    // Check command line and parse arguments
     if (argc != 4) {
         fprintf(stderr,"Correct syntxt is: %s <networknastiness> "
                 "<filenastiness> <targetdir>\n", argv[0]);
@@ -298,6 +316,13 @@ void checkArgs(int argc, char *argv[]) {
     }
 }
 
+// ------------------------------------------------------
+// //                   matchFileHash
+// //
+// //  Enters the target directory and creates SHA1 hashes 
+// // for the files there. Returns whether any of the hashes
+// // match the hash coming from the client.
+// // ------------------------------------------------------
 bool matchFileHash(char *filepath, DIR *TGT, char *incomingMessage) {
     struct dirent *targetFile;
     ifstream *t;
@@ -320,12 +345,7 @@ bool matchFileHash(char *filepath, DIR *TGT, char *incomingMessage) {
         shaEncrypt(obuf, (const unsigned char *) buffer->str().c_str());
         string str_obuf(reinterpret_cast<char*>(obuf), 20);
         
-        //printFileHash(obuf, targetFile->d_name);
-        //string str_incoming(incomingMessage);
-        //printFileHash((unsigned char *)str_incoming.c_str(), targetFile->d_name);   
-        
         if (strcmp(incomingMessage, str_obuf.c_str()) == 0) {
-            //printf("3 Matched checksums\n");
             delete t;
             delete buffer;
             matched = true;
@@ -335,6 +355,11 @@ bool matchFileHash(char *filepath, DIR *TGT, char *incomingMessage) {
     return matched;
 }
 
+// ------------------------------------------------------
+// //                   printFileHash
+// //
+// //  Prints the passed in SHA1 hash in a readable format
+// // ------------------------------------------------------
 void printFileHash(unsigned char *hash, char *file_name) {
     printf("SHA1 (\"%s\") = ", file_name);
     for (int i = 0; i < 20; i++) {
@@ -343,11 +368,23 @@ void printFileHash(unsigned char *hash, char *file_name) {
     printf("\n");
 }
 
+// ------------------------------------------------------
+// //                   shaEncrypt
+// //
+// //  Makes a SHA1 hash of the message provided
+// // ------------------------------------------------------
 void shaEncrypt(unsigned char *hash, const unsigned char *message) {
     string msg((const char *)message);
     SHA1(message, msg.length(), hash);
 }
 
+// ------------------------------------------------------
+// //                   writeFile
+// //
+// //  Takes the contents from the the file content 
+// //  vector and creates a temp file in the target
+// //  dircetory with that content
+// // ------------------------------------------------------
 void writeFile(int nastiness, char *targetDir, string fileName, vector<string> *fileContent) {
     size_t size = fileContent->size();
     string fileCon = "";
@@ -361,7 +398,6 @@ void writeFile(int nastiness, char *targetDir, string fileName, vector<string> *
     try {
         buffer = (char *)malloc(sourceSize);
         strncpy(buffer, fileCon.c_str(), sourceSize);
-        //buffer[sourceSize] = '\0';
         string targetName = makeFileName(targetDir, fileName + ".TMP");
         NASTYFILE outputFile(nastiness); 
         outputFile.fopen(targetName.c_str(), "wb");  
