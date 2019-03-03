@@ -151,6 +151,12 @@ int main(int argc, char *argv[]) {
                 } else if (strcmp(incomingMessage, pktList[1].c_str()) == 0) {
                     oneTimeOnly = 0;
                     readAttempt = 0;
+                    cout << "File: " << fileName << " transmission complete, "
+                        << "waiting for end-to-end check, attempt "
+                        << end_to_end_attempt << endl;
+                    *GRADING << "File: " << fileName << " transmission complete, "
+                        << "waiting for end-to-end check, attempt "
+                        << end_to_end_attempt << endl;
                     break;
                 }
             }

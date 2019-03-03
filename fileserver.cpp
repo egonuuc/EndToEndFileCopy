@@ -148,6 +148,8 @@ int main(int argc, char *argv[]) {
                         }
                     } 
                     if (fileContent.size() == (unsigned int)totalPacketNum) {
+                        cout << "File: " << file << " received, beginning end-to-end check" << endl;
+                        *GRADING << "File: " << file << " received, beginning end-to-end check" << endl;
                         sock->write(pktList[1].c_str(), strlen(pktList[1].c_str())+1);
                         writeFile(file_nastiness, argv[3], file, &fileContent);
                         readAttempt = 0;
@@ -157,7 +159,7 @@ int main(int argc, char *argv[]) {
             }
             // If received MATCHED_CHECKSUM
             else if (strcmp(msgList[2].c_str(),incomingMessage) == 0){
-                cout << "File: " << file << " copied successfully" << endl;
+                cout << "File: " << file << " end-to-end check succeeded" << endl;
                 sock -> write(msgList[4].c_str(), strlen(msgList[4].c_str())+1);
                 *GRADING << "File: " << file << " end-to-end check succeeded" << endl;
                 string targetName = makeFileName(argv[3], file + ".TMP");
@@ -217,7 +219,6 @@ void cleanBadFiles(char *filepath, DIR *TGT) {
                 (strcmp(targetFile->d_name, "..")  == 0 )) 
             continue;
         string tFile(targetFile->d_name);
-        cout << (tFile.substr(tFile.length() - 4, 4)) << endl;
         if (strcmp(".TMP", (tFile.substr(tFile.length() - 4, 4)).c_str()) == 0) {
             remove(targetFile->d_name);
         }
