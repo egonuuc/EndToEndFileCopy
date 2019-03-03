@@ -116,24 +116,24 @@ int main(int argc, char *argv[]) {
         sock -> turnOnTimeouts(3000);
 
         while(!fileNames.empty()) {
+            int nextFile = 0;
 
             // WRITE BEGIN_TRANSMIT:<fileName>:<totalPacketNum>
             string fileName = fileNames.front();
             string fileCon = fileContent.front();
             totalPacketNum = createPackets(fileCon, &packets);
             string initMsg = (msgList[0] + ":" + fileName + ":" + to_string(totalPacketNum)).c_str();
-            sock -> write(initMsg.c_str(), strlen(initMsg.c_str())+1);
-            *GRADING << "File: " << fileName << ", beginning transmission, attempt "
-                << transmission_attempt << endl;
-            cout << "*****BEGIN TRANSMIT. TOTAL PACKET NUM " << totalPacketNum << endl;
-            
+            if (nextFile++ == 0) {
+                sock -> write(initMsg.c_str(), strlen(initMsg.c_str())+1);
+                *GRADING << "File: " << fileName << ", beginning transmission, attempt "
+                    << transmission_attempt << endl;
+                cout << "File: " << fileName << ", beginning transmission, total packet number is " << totalPacketNum << endl;
+            }
+
             int readAttempt = 0;
             int MAXATTEMPT = 5000;
             int requestedPacketNum = 0;
             int oneTimeOnly = 0;
-            /* don't bother keeping count of how many packets are sent because may
-             * need to attempt sending many times
-             */
             while(1) {
                 if (oneTimeOnly++ == 0) {
                     sock -> write(packets[requestedPacketNum].c_str(), strlen(packets[requestedPacketNum].c_str())+1);
@@ -145,12 +145,11 @@ int main(int argc, char *argv[]) {
                 }
                 if (timeout == true && ++readAttempt < MAXATTEMPT) { 
                     ++readAttempt;
-                    cout << " ************ write packet " << requestedPacketNum << " again **********" << endl;
                     sock -> write(packets[requestedPacketNum].c_str(), strlen(packets[requestedPacketNum].c_str())+1);
                     continue;
                 }
                 if (timeout == true && readAttempt >= MAXATTEMPT) { 
-                    throw C150NetworkException("Server is not working well.");	
+                    throw C150NetworkException("Server is down.");	
                 }
                 checkMsg(incomingMessage, readlen);
                 
@@ -190,7 +189,7 @@ int main(int argc, char *argv[]) {
             // If received file hash is correct, send confirmation
             if (strcmp(incomingMessage, shaCodes[file_num].c_str()) == 0) {
                 cout << "File: " << fileName << " file hash matched -- "
-                    << "informing server" << endl;
+                    << "confirming with server" << endl;
                 sock -> write(msgList[2].c_str(), strlen(msgList[2].c_str())+1);
                 end_to_end_attempt = 0;
                 transmission_attempt = 0;
@@ -211,11 +210,17 @@ int main(int argc, char *argv[]) {
                     throw C150NetworkException("Something has gone wrong");	
                 }
             }
-
+            
             // READ ACKNOWLEDGEMENT
             readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
             if (timeout == true && ++confirmation_attempt < MAXATTEMPT) { 
-                sock -> write(msgList[2].c_str(), strlen(msgList[2].c_str())+1);
+                if (strcmp(incomingMessage, shaCodes[file_num].c_str()) == 0) {
+                    cout << "File: " << fileName << " file hash matched -- "
+                        << "confirming with server" << endl;
+                    sock -> write(msgList[2].c_str(), strlen(msgList[2].c_str())+1);
+                    end_to_end_attempt = 0;
+                    transmission_attempt = 0;
+                } 
                 ++confirmation_attempt;
                 continue;
             }
@@ -223,10 +228,10 @@ int main(int argc, char *argv[]) {
                 throw C150NetworkException("Server is down");	
             }
             checkMsg(incomingMessage, readlen);
-
+            
             // If received ACKNOWLEDGEMENT
             if (strcmp(incomingMessage, msgList[4].c_str()) == 0) {
-                printf("2 Acknowledgement received\n");
+                cout << "File: " << fileName << ", acknowledgement received" << endl;
                 *GRADING << "File: " << fileName << " end-to-end check succeeded, "
                     << "attempt " << confirmation_attempt << endl;
                 if (strcmp(fileNames.front().c_str(), fileName.c_str()) == 0) {
@@ -235,24 +240,20 @@ int main(int argc, char *argv[]) {
                     fileNames.pop();
                     packets.clear();
                     confirmation_attempt = 0;
+                    nextFile = 0;
                 }
             }
             /*
-            // If BEGIN_TRANSMIT for next file got lost
-            else if (strcmp(incomingMessage, msgList[5].c_str()) == 0) {
-                string fileName = fileNames.front();
-                string fileCon = fileContent.front();
-                totalPacketNum = createPackets(fileCon, &packets);
-                string initMsg = (msgList[0] + ":" + fileName + ":" + to_string(totalPacketNum)).c_str();
-                sock -> write(initMsg.c_str(), strlen(initMsg.c_str())+1);
-            }*/
             // If received anything else, resend confirmation
             else {
-                if (++confirmation_attempt < MAXATTEMPT)
+                if (++confirmation_attempt < MAXATTEMPT) {
                     sock -> write(msgList[2].c_str(), strlen(msgList[2].c_str())+1);
+                    cout << "File: " << fileName << ", resending confirmation" << endl;
+                }
                 else 
                     throw C150NetworkException("Something has gone wrong2");	
             }
+            */
         }
         delete sock;
     }
