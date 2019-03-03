@@ -94,26 +94,12 @@ int main(int argc, char *argv[]) {
 
         // infinite loop processing messages
         while(1) {
-            bool beginNow = false;
-            bool copySuccess = false;
 
-            // Read a packet. -1 in size below is to leave room for null
             readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1); // took out -1
             timeout = sock -> timedout();
-            if (timeout == true && beginNow == true) {
-                cout << " begin transmit got lost so requesting again" << endl;
-                sock -> write(msgList[5].c_str(), strlen(msgList[5].c_str())+1);
+            if (timeout == true) {
                 continue;
             }
-            else if (timeout == true && copySuccess == true) { 
-                cout << "File: " << file << " copied successfully RESEND" << endl;
-                sock -> write(msgList[4].c_str(), strlen(msgList[4].c_str())+1);
-                continue;
-            }
-            else if (timeout == true) {
-                continue;
-            }
-            
             checkMsg(incomingMessage, readlen);
 
             // If received BEGIN_TRANSMIT:<fileName>:<totalPacketNum>
@@ -122,8 +108,6 @@ int main(int argc, char *argv[]) {
             size_t pos = s.find(delimiter);
             string initMsg = s.substr(0, pos);
             if (strcmp(msgList[0].c_str(), initMsg.c_str()) == 0) {
-                beginNow = false;
-                copySuccess = false;
                 s.erase(0, pos + delimiter.length());
                 pos = s.find(delimiter);
                 file = s.substr(0, pos);
@@ -137,52 +121,32 @@ int main(int argc, char *argv[]) {
                 int MAXATTEMPT = 5000;
                 int control_index = 0;
                 while(1) {
-                    /* scenarios :
-                     *      no packet was received - try five times
-                     *      two duplicate packets were received - ignore second one
-                     *      wrong packet was received - request the needed one
-                     */
-
                     readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
                     timeout = sock -> timedout();
                     if (timeout == true && ++readAttempt < MAXATTEMPT) { 
                         ++readAttempt;
-                        if (fileContent.size() == (unsigned int)totalPacketNum) {
-                            cout << " *********** write RECEIVED_ALL2 ************" << endl;
-                            sock->write(pktList[1].c_str(), strlen(pktList[1].c_str())+1);
-                            writeFile(file_nastiness, argv[3], file, &fileContent);
-                            readAttempt = 0;
-                        }
-                        else if (fileContent.size() == (unsigned int)control_index) {
-                            cout << " *********** write SEND2 " << control_index << " again ************" << endl;
-                            string sendRequest = pktList[0] + ':' + to_string(control_index + 1);
-                            sock->write(sendRequest.c_str(), strlen(sendRequest.c_str())+1);
-                        } 
-                        else if (fileContent.size() < (unsigned int)control_index) {
-                            cout << " *********** write SEND2 " << control_index << " AGAIN ************" << endl;
-                            string sendAgainRequest = pktList[0] + ':' + to_string(control_index);
-                            sock->write(sendAgainRequest.c_str(), strlen(sendAgainRequest.c_str())+1);
-                        }
                         continue;
                     }
                     if (timeout == true && readAttempt >= MAXATTEMPT) { 
-                        throw C150NetworkException("Server is not working well.");  
+                        throw C150NetworkException("Server is down");	
                     }
                     
                     checkMsg(incomingMessage, readlen);
+                    if (strspn(incomingMessage, "0123456789") < 5) {
+                        ++readAttempt;
+                        continue;
+                    }
                     extractControlInfo(incomingMessage, &control_index);
                     if (fileContent.size() < (unsigned int)totalPacketNum) {
                         if (packetTracker[control_index] == 0) {
                             storePacket(incomingMessage, &fileContent, control_index, packetTracker);
                             if (fileContent.size() < (unsigned int)totalPacketNum) {
-                                cout << " *********** write SEND " << control_index << " ************" << endl;
                                 string sendRequest = pktList[0] + ':' + to_string(control_index + 1);
                                 sock->write(sendRequest.c_str(), strlen(sendRequest.c_str())+1);
                             }
                         }
                     } 
                     if (fileContent.size() == (unsigned int)totalPacketNum) {
-                        cout << " *********** write RECEIVED_ALL ************" << endl;
                         sock->write(pktList[1].c_str(), strlen(pktList[1].c_str())+1);
                         writeFile(file_nastiness, argv[3], file, &fileContent);
                         readAttempt = 0;
@@ -195,14 +159,15 @@ int main(int argc, char *argv[]) {
                 cout << "File: " << file << " copied successfully" << endl;
                 sock -> write(msgList[4].c_str(), strlen(msgList[4].c_str())+1);
                 *GRADING << "File: " << file << " end-to-end check succeeded" << endl;
-                beginNow = true;    
-                copySuccess = true;
                 fileContent.clear();
                 initMsg = "";
                 continue;
             }
             // If received file hash (presumably)
             else { 
+                if (strspn(incomingMessage, "0123456789") == 5) {
+                    continue;
+                }
                 TGT = opendir(argv[3]);
                 if (TGT == NULL) {
                     fprintf(stderr,"Error opening target directory %s\n", argv[3]);
@@ -216,6 +181,7 @@ int main(int argc, char *argv[]) {
                     string str = "WRONG_CHECKSUM";
                     //TODO If wrong checksum, delete temp file
                     sock -> write(str.c_str(), strlen(str.c_str())+1);
+                    cout << "File: " << file << " end-to-end check failed" << endl;
                     *GRADING << "File: " << file << " end-to-end check failed" << endl;
                 }
                 closedir(TGT);
@@ -408,7 +374,7 @@ void writeFile(int nastiness, char *targetDir, string fileName, vector<string> *
             exit(16);
         }
         if (outputFile.fclose() == 0 ) {
-           cout << "Finished writing file " << targetName <<endl;
+           cout << "File " << targetName << " has been written" << endl;
         } else {
             cerr << "Error closing output file " << targetName << 
                 " errno=" << strerror(errno) << endl;
