@@ -5,9 +5,8 @@
 //        Author: Michael Egonu (megonu01) & Remmy Chen (rchen07)
 //        Date: 02/10/2019     
 //   
-//        COMMAND LINE
-//
-//              fileclient <server> <networknastiness> <filenastiness> <srcdir>
+//        COMMAND LINE:
+//        fileclient <server> <networknastiness> <filenastiness> <srcdir>
 //
 // --------------------------------------------------------------
 
@@ -49,12 +48,6 @@ int createPackets(string fileCon, vector<string> *packets);
 bool isFile(string fname);
 void readFile(int nastiness, string filePath, queue<string> *fileContent);
 
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-//                    Command line arguments
-//
-// The following are used as subscripts to argv, the command line arguments
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-
 const int serverArg = 1;     // server name is 1st arg
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
@@ -80,7 +73,7 @@ int main(int argc, char *argv[]) {
 
 
     GRADEME(argc, argv); // for grading
-    checkArgs(argc, argv);
+    checkArgs(argc, argv); // check command line arguments
     network_nastiness = atoi(argv[2]); // convert command line string to int
     file_nastiness = atoi(argv[3]); // convert command line string to int
     checkDirectory(argv[4]); // make sure source dir exists
@@ -292,6 +285,12 @@ int createPackets(string fileCon, vector<string> *packets) {
     return packetno;
 }
 
+// ------------------------------------------------------
+// //                   checkMsg
+// //
+// //  Validates the incoming Message is a null terminated
+// // string
+// // ------------------------------------------------------
 void checkMsg(char (&incomingMessage)[512], ssize_t readlen) {
     if (readlen == 0) {
         return;
@@ -305,6 +304,11 @@ void checkMsg(char (&incomingMessage)[512], ssize_t readlen) {
     };
 }
 
+// ------------------------------------------------------
+// //                   checkArgs
+// //
+// //  Validates the arguments from the command line
+// // ------------------------------------------------------
 void checkArgs(int argc, char *argv[]) {
     // Check command line
     if (argc != 5) {
@@ -328,6 +332,7 @@ void checkArgs(int argc, char *argv[]) {
         exit(4);
     }
 }
+
 void readFile(int nastiness, string filePath, queue<string> *fileContent){
     void *fopenretval;
     size_t len;
@@ -366,12 +371,12 @@ void readFile(int nastiness, string filePath, queue<string> *fileContent){
             e.formattedExplanation() << endl;
     }
 }
+
 void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<string> *fileNames, queue<string> *fileContent, int nastiness) {
     struct dirent *sourceFile;
     ifstream *t;
     stringstream *buffer;
     unsigned char obuf[20];
-
 
     // loop through files, printing checksums
     while ((sourceFile = readdir(SRC)) != NULL) {
@@ -401,6 +406,11 @@ void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<s
     }
 }
 
+// ------------------------------------------------------
+// //                   printFileHash
+// //
+// //  Prints the passed in SHA1 hash in a readable format
+// // ------------------------------------------------------
 void printFileHash(unsigned char *hash, char *file_name) {
     printf("SHA1 (\"%s\") = ", file_name);
     for (int i = 0; i < 20; i++) {
@@ -487,14 +497,11 @@ void checkAndPrintMessage(ssize_t readlen, char *msg, ssize_t bufferlen) {
 }
 
 // ------------------------------------------------------
-//
 //                   isFile
 //
 //  Make sure the supplied file is not a directory or
 //  other non-regular file.
-//     
 // ------------------------------------------------------
-
 bool isFile(string fname) {
     const char *filename = fname.c_str();
     struct stat statbuf;  
@@ -514,7 +521,6 @@ bool isFile(string fname) {
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 //                     setUpDebugLogging
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-
 void setUpDebugLogging(const char *logname, int argc, char *argv[]) {
     ofstream *outstreamp = new ofstream(logname);
     DebugStream *filestreamp = new DebugStream(outstreamp);
