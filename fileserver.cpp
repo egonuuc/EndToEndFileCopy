@@ -5,8 +5,7 @@
 //        Author: Michael Egonu (megonu01) &  Remmy Chen (rchen07)
 //        Date: 2/17/2019
 //
-//        COMMAND LINE
-//
+//        COMMAND LINE:
 //        fileserver <networknastiness> <filenastiness> <targetdir>
 //     
 // --------------------------------------------------------------
@@ -48,13 +47,10 @@ void extractControlInfo(char *incomingMessage, int *control_index);
 void cleanBadFiles(char *filepath, DIR *TGT);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-//
 //                           main program
-//
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 
 int main(int argc, char *argv[]) {
-    // Variable declarations
     char incomingMessage[512];   // received message data
     int network_nastiness;
     int file_nastiness;
@@ -68,34 +64,25 @@ int main(int argc, char *argv[]) {
     int totalPacketNum;
     bool timeout;
     
-    // DO THIS FIRST OR YOUR ASSIGNMENT WON'T BE GRADED!
-    GRADEME(argc, argv);
-    
-    // Check command line arguments
-    checkArgs(argc, argv);
-
+    GRADEME(argc, argv); // for grading
+    checkArgs(argc, argv); // check command line arguments
     network_nastiness = atoi(argv[1]); // convert command line string to integer
     file_nastiness = atoi(argv[2]);    // convert command line string to integer
     
-    //  Set up debug message logging. Added indents to server only, not
-    //  client, so can merge logs and tell server and client entries apart
-    //    cat fileserverdebug.txt fileserverclient.txt | sort
+    // set up debug message logging. Added indents to server only
+    // cat fileserverdebug.txt fileserverclient.txt | sort
     setUpDebugLogging("fileserverdebug.txt",argc, argv);
     c150debug->setIndent("    ");              
 
-    // Create socket, loop receiving and responding
-    try {
+   
+    try { // Create socket, loop receiving and responding
         c150debug->printf(C150APPLICATION,"Creating C150NastyDgmSocket(nastiness=%d)",
                 network_nastiness);
         C150DgmSocket *sock = new C150NastyDgmSocket(network_nastiness);
         c150debug->printf(C150APPLICATION,"Ready to accept messages");
+        sock -> turnOnTimeouts(3000); // Allow time out if no packet is received for 3000 milliseconds
 
-        // Allow time out if no packet is received for 3000 milliseconds
-        sock -> turnOnTimeouts(3000);
-
-        // infinite loop processing messages
-        while(1) {
-
+        while(1) { // infinite loop processing messages
             readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1); // took out -1
             timeout = sock -> timedout();
             if (timeout == true) {
@@ -201,10 +188,8 @@ int main(int argc, char *argv[]) {
     delete sock;
     }
     catch (C150NetworkException e) {
-        // Write to debug log
         c150debug->printf(C150ALWAYSLOG,"Caught C150NetworkException: %s\n",
                 e.formattedExplanation().c_str());
-        // In case we're logging to a file, write to the console too
         cerr << argv[0] << ": caught C150NetworkException: " << e.formattedExplanation() << endl;
     }
     return 4;
@@ -416,8 +401,6 @@ void writeFile(int nastiness, char *targetDir, string fileName, vector<string> *
 
 // ------------------------------------------------------
 //                   makeFileName
-                // open target dir
-                // open target dir
 //
 // Put together a directory and a file name, making
 // sure there's a / in between
@@ -450,6 +433,12 @@ void checkDirectory(char *dirname) {
     }
 }
 
+// ------------------------------------------------------
+//                   isFile
+//
+//  Make sure the supplied file is not a directory or
+//  other non-regular file.
+// ------------------------------------------------------
 bool isFile(string fname) {
     const char *filename = fname.c_str();
     struct stat statbuf;  
@@ -468,32 +457,7 @@ bool isFile(string fname) {
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 //                     setUpDebugLogging
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-
 void setUpDebugLogging(const char *logname, int argc, char *argv[]) {
-    //           Choose where debug output should go
-    //
-    // The default is that debug output goes to cerr.
-    //
-    // Uncomment the following three lines to direct
-    // debug output to a file. Comment them to 
-    // default to the console
-    //  
-    // Note: the new DebugStream and ofstream MUST live after we return
-    // from setUpDebugLogging, so we have to allocate
-    // them dynamically.
-    //
-    // Explanation: 
-    // 
-    //     The first line is ordinary C++ to open a file
-    //     as an output stream.
-    //
-    //     The second line wraps that will all the services
-    //     of a comp 150-IDS debug stream, and names that filestreamp.
-    //
-    //     The third line replaces the global variable c150debug
-    //     and sets it to point to the new debugstream. Since c150debug
-    //     is what all the c150 debug routines use to find the debug stream,
-    //     you've now effectively overridden the default.
     ofstream *outstreamp = new ofstream(logname);
     DebugStream *filestreamp = new DebugStream(outstreamp);
     DebugStream::setDefaultLogger(filestreamp);
@@ -501,17 +465,6 @@ void setUpDebugLogging(const char *logname, int argc, char *argv[]) {
     //  Put the program name and a timestamp on each line of the debug log.
     c150debug->setPrefix(argv[0]);
     c150debug->enableTimestamp(); 
-
-    // Ask to receive all classes of debug message
-    //
-    // See c150debug.h for other classes you can enable. To get more than
-    // one class, you can or (|) the flags together and pass the combined
-    // mask to c150debug -> enableLogging 
-    //
-    // By the way, the default is to disable all output except for
-    // messages written with the C150ALWAYSLOG flag. Those are typically
-    // used only for things like fatal errors. So, the default is
-    // for the system to run quietly without producing debug output.
     c150debug->enableLogging(C150APPLICATION | C150NETWORKTRAFFIC | 
             C150NETWORKDELIVERY); 
 }
