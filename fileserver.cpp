@@ -60,7 +60,7 @@ int main(int argc, char *argv[]) {
     string msgList[] = {"BEGIN_TRANSMIT", "COMPLETED_TRANSMIT", "MATCHED_CHECKSUM", "WRONG_CHECKSUM", "ACKNOWLEDGEMENT", "REBEGIN"};
     ssize_t readlen;
     bool matched;
-    vector<string> fileContent; //(1000);
+    vector<string> fileContent;
     int totalPacketNum;
     bool timeout;
     
@@ -195,6 +195,12 @@ int main(int argc, char *argv[]) {
     return 4;
 }
 
+
+// ------------------------------------------------------
+// //                  cleanBadFiles
+// //
+// //  Checks for files with .TMP extension and removes them
+// // ------------------------------------------------------
 void cleanBadFiles(char *filepath, DIR *TGT) {
     struct dirent *targetFile;
     // loop through files
@@ -210,12 +216,12 @@ void cleanBadFiles(char *filepath, DIR *TGT) {
     }
 }
 
-
 // ------------------------------------------------------
 // //                  extractControlInfo
 // //
-// //  Strips out the contol information from the package
-// //  and uses that to assign a correct packet number
+// //  Strips out the contol information from the package,
+// //  which represents the packet number of the file contents
+// //  that are in the rest of the packet
 // // ------------------------------------------------------
 void extractControlInfo(char *incomingMessage, int *control_index) {
     string control_str = "";
@@ -233,7 +239,7 @@ void extractControlInfo(char *incomingMessage, int *control_index) {
 // ------------------------------------------------------
 // //                   storePacket
 // //
-// //  Stores the packet in its correct spot in
+// //  Stores the packet at the correct index in
 // //  the file content structure
 // // ------------------------------------------------------
 void storePacket(char *incomingMessage, vector<string> *fileContent, int control_index, int *packetTracker) {
@@ -252,7 +258,7 @@ void storePacket(char *incomingMessage, vector<string> *fileContent, int control
 // ------------------------------------------------------
 // //                   checkMsg
 // //
-// //  Validates the incoming Message is a null terminated
+// //  Validates that the incoming message is a null terminated
 // // string
 // // ------------------------------------------------------
 void checkMsg(char (&incomingMessage)[512], ssize_t readlen) {
@@ -336,7 +342,7 @@ bool matchFileHash(char *filepath, DIR *TGT, char *incomingMessage) {
 // ------------------------------------------------------
 // //                   printFileHash
 // //
-// //  Prints the passed in SHA1 hash in a readable format
+// //  Prints the passed in SHA1 hash in a human readable format
 // // ------------------------------------------------------
 void printFileHash(unsigned char *hash, char *file_name) {
     printf("SHA1 (\"%s\") = ", file_name);
