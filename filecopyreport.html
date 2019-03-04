@@ -54,7 +54,7 @@ rchen07
  <a href="mailto:lady.gaga@cs.tufts.edu">lady.gaga@cs.tufts.edu</a>
 --> 
 
-<a href="mailto:chenremmy@gmail.com">chenremmy@gmail.com</a>
+<a href="mailto:rchen07@cs.tufts.edu">rchen07@cs.tufts.edu</a>
 <br>
 <br>
 <br>
@@ -125,25 +125,25 @@ on both the client and the server; if all you got working
 was the end-to-end check, then please tell us how to test your work. <em>Also: if high network nastiness messes up your ability to deal with file nastiness, you can give us two pairs: e.g. Test my client and server with networknastiness=4 and filenastiness=1 or networknastiness=0 and filenastiness=3)</em></li>
 <li class="a">
 <!-- replace XX and YY with the actual values -->
-Please test my client and server with: networknastiness=1 and filenastiness=0-4.
+Please test the client and server with: networknastiness=1 and filenastiness=0-4.
 </li>
 
 <li class="q">Is there anything else we should
 know about testing your code, or what you expect it to do
 (beyond what's explained in your report below)?</li>
 <li class="a">
-N/A
+N/A.
 </li>
 
 <li class="q">Did you get help from anyone other than your teammate? If "yes", then briefly explain who helped you and how.</li>
 <li class="a">
-No
+No.
 </li>
 
 
 <li class="q">(optional) Do you have any other comments on this assignment (e.g. was it worthwhile, what did you learn from it, do you have suggestions for improvment if the course is offered again)?</li>
 <li class="a">
-...your answer here...
+It's pretty complex.
 </li>
 
 </ol>
@@ -160,41 +160,44 @@ No
 
 <p style="color:grey">
 Overview: <br>
-Our file copy implementation is broken down into two main parts on both the client and the server. The first part is the actual file data transfer protocol. We chose an implementation that sends over a single packet form the client which then waits from a response from the server noting whether the packet was received or it is missing. Through this, packets of file data and acknolwedgement messages are sent back and forth fromt he client to the server in an attempt to replicate files from the source directory to the target directory. After all packet data is sent for a file, we progress onto a second part of our implementation: the end-to-end check. Our check utilizes SHA1 hashes of the files in both the target and source directories and transfers the respective hashes between the client and the server to compare and see if they match. 
+Our file copy implementation is broken down into two main parts on both the client and the server. The first part is the actual file data copy protocol. We chose an implementation that sends over a single packet form the client which then waits from a response from the server noting whether the packet was received or it is missing. Through this, packets of file data and acknolwedgement messages are sent back and forth fromt he client to the server in an attempt to replicate files from the source directory to the target directory. After all packet data is sent for a file, we progress onto a second part of our implementation: the end-to-end check. Our check utilizes SHA1 hashes of the files in both the target and source directories and transfers the respective hashes between the client and the server to compare and see if they match. 
 <br><br>Cases:<br>
-We believe our code handles the normal case of 0 file nastiness and 0 network nastiness. It also covers all levels of file nastiness. Our code handles network nastiness of 1 and we believe that is because we handle cases of dropped packets and mixed up files. <br> For network nastiness of 1, our code easily handles small files like moor.txt, independence.txt, and data1 but it takes a while to transfer large ones like warandpeace. 
+We believe our code handles the normal case of 0 file nastiness and 0 network nastiness. It also covers all levels of file nastiness. Our code handles network nastiness of 1 and we believe that is because we handle cases of dropped packets and mixed up files. <br> For network nastiness of 1, our code easily handles small files like moor.txt, independence.txt, and data1 but it takes a while to copy large ones like warandpeace. 
 <br> <br>File Copy Protocol:<br>
 <br>Client
 <ol>
-<li>On the client, the first thing that we do in our protocol is traverse through the source directory and create a list of SHA1 hashes for all the files there as a well as a queue of the file names.</li>
-<li>After this preporcessing, we take the file from the front of the file name queue as well as the whole file string from the front of the file content queue. We then use the file content string that we received and create packets of this data by breaking the content into chunks that will fit into packets of 512 chars. The first 4 chars in a packet are reserved for our control information. In our implementaton, the control information is solely the packet number. The next 508 chars are used for the packet content. After creating the packet, it is pushed onto a vector of packets. When all packets are created, the total number of packets is registered. </li>
-<li> We then write to the server a message signaling the beginninig of a file transmission along with the total number of packets that the client needs to send for the given file.</li>
-<li>The first packet is then immediately sent to the server</li>
+<li>On the client, the first thing that we do in our protocol is traverse through the source directory and create a list of SHA1 hashes for all the files, a queue of the file names, and a queue of file content strings (where each string represents a file's contents).</li>
+<li>After this preprocessing, we take the file name from the front of the file name queue as well as the whole file string from the front of the file content queue. We then break the file content string into chunks that will fit into packets of 512 chars. The first 5 chars in a packet are reserved for our control information. In our implementaton, the control information is solely the packet number. The next 507 chars are used for the file content. After creating the packet, it is pushed onto a vector of packets. When all packets are created, the total number of packets is registered. </li>
+<li> We then write to the server a message signaling the beginning of a file transmission along with the total number of packets that the client needs to send for the given file (in the format of BEGIN_TRANSMIT:<filename>:<totalpacketnumber>).</li>
+<li>The first packet is then immediately sent to the server.</li>
 <li>The client then reads from the server and checks if there was a timeout. If there is a timeout after the first packet was sent, the client resends the "begin transmit" message.</li>
-<li>After ensuring that the incoming message in null-terminated, we parse the incoming message to determine if the serner needs more packets to be sent or if it has reecived all packets. If it needs more packets, we use the second part of the message to determine which packet is requested from the server and resend the packet </li>
-<li>If the server message shows that it received all the packets, we reset all the initial variables and start the end to end check.</li>
+<li>After ensuring that the incoming message in null-terminated, we parse the incoming message to determine if the server needs more packets (in the format of SEND:<packetnumber>) to be sent or if it has received all packets (in the format of RECEIVED_ALL). If the server makes a SEND request, we use the second part of the message to determine which packet is requested from the server and resend the packet.</li>
+<li>If the server message shows that it has received all the packets, we reset all the initial variables and start the end to end check.</li>
 </ol>
 <br>Server
 <ol>
   <li>On the server side, it first reads what it gets from the client and then determines what to do.</li>
-  <li>When receiving a message that denotes the beginning of a transmission, the server parses the message to extract the total number of packets that will be sent over from the client. It then creates an array of that size for expected packets and intializes all spaces to 0 (signals no packet has been received for that index).</li>
-  <li>The server then reads the incoming message and checks if there is a timeout. If so, it attempts to read again 5 times until it gives up. </li>
-  <li>If a data packet is read, we first extract the control info from the first 4 chars of the packet. </li>
-  <li>If the size of the file content vector is smaller the total number of packets, we storre the packet in the file content vector at the position indicated from the packet number we received from the control information. </li>
-  <li>If the total number of packets is reached, we write to the client that we have received all the packets and then start to write the the full file to the target directory. All the files are created with .TMP. </li>
+  <li>When receiving a message that denotes the beginning of a transmission, the server parses the message to extract the total number of packets that will be sent over from the client, which will be used to check against the size of a vector where all file content strings extracted from packets will be placed into and which is used to create an array that keeps track of which packets we have received.</li>
+  <li>The server then reads the incoming message and checks if there is a timeout. If so, it attempts to read again for some number of times until it gives up. </li>
+  <li>If a data packet is read, as indicated by the packet having no less than 5 numbers as the prefix, we first extract the control information from the first 5 chars of the packet. </li>
+  <li>If the size of the file content vector is smaller the total number of packets, and if we have not received a packet of this packet number, we store the packet in the file content vector at the position indicated from the packet number we received from the control information and we make a SEND request to the client if we are expecting more packets from the client. </li>
+  <li>If the total number of packets that is expected is reached, we write to the client that we have received all the packets (in the format of RECEIVED_ALL) and then start to write the the full file to the target directory. All the files are created with an added extension of .TMP. </li>
 </ol>
+
+Renaming files to strip the .TMP extension is done after the end-to-end check succeeds, so any TARGET file without a .TMP suffix is correct.
 
 <br><br>Error Handling:<br>
 <ul>
-  <li>In the error case of files getting mixed up in a noisy network, we created an invariant in our program that all files are worked on one at a time. We guarantee this by having a file queue that doesn't pop off a file until the end-to-end check has been certified as successful. </li>
-  <li>With dropped packets, we try to deal with this case on the client side by listening for the server's incoming message to understand if a packet needs to be resent. On the server side, we determine if a packet needs to be resent by checking whether the file content vector has grown. Since we only work on one packet at a time, we assume that an increase of one packet is attributed to the packet we just read. </li>
+  <li>To handle the case of packets from different files getting mixed up in a noisy network, we maintained an invariant in our program that all files are worked on one at a time. We guarantee this by having a file content and file name queue on the client side that doesn't pop off information pertaining to the file that we're working on until the end-to-end check has been acknowledged by the server as successful. </li>
+  <li>To handle the case of dropped packets, on the client side we listen for the server's incoming message to understand if a packet needs to be resent. On the server side, we determine if a packet needs to be resent by checking whether the file content vector has grown. Since we only work on one packet at a time, we assume that an increase of one packet is attributed to the packet we just read. </li>
 </ul>
   
 <br><br>Existing Bugs/Shortcomings:<br>
-One shortcoming of our code is the speed it takes to copy the files over. For network nastiness level 1, it takes ~15 minutes to copy over all of the files. It quickly goes through the smaller files but the bulk of the time is spent copying over the large warandpeace file. Other smaller files are copied with ease. That is one of the main problems with our implementation. 
-
+The primary shortcoming of our code is the speed it takes to copy files over. For network nastiness level 1, it takes ~15 minutes to copy over all of the files. It quickly goes through the smaller files but the bulk of the time is spent copying over the large warandpeace file. Other smaller files are copied with ease. The two primary reasons for this slowness is that for each file packet received from the client, the server will send a response back and that the server is highly specific in that it only stores a specific file packet and will not take packets that arrive out of order, even if those packets will be needed later. The slowness is particularly problematic when there are large files and very bad network.
+Other shortcomings include that the maximum number of packets that may be sent is limited to 99999 because we have set the control information length to be fixed at 5, that the user has no control over the number of attempts that a machine may try to send information because it has to be modified in both client and server code, and that information other than SHA1 hashes are sent in text form which may not necessarily be desired. 
+	
 <br><br>Lessons Learned<br>
-One big lesson that we learned is the importance and necessity of refactoring our code. For our file transfer protocol, we had an earlier version that sent packets in batches and kept a count for hoe many packets were sent between the client and the server. We learned that implementation worked for our network nastiness level of 0 but it did not work for higher levels. Through debugging, it was decided that it would be better if we restructured thr protocol to work on each packet one at a time in order for us to better handle missing/out-of-order packet cases. By choosing to refactor instead of sticking to the old implementation, we not only got our code to work for higher nastiness levels but we also found bugs in our former code.
+One big lesson that we learned is the importance and necessity of refactoring our code. For our file copy protocol, we had an earlier version that sent packets in batches and kept a count for how many packets were sent between the client and the server. We learned that implementation worked for our network nastiness level of 0 but it did not work for higher levels. Through debugging, we decided that it would be better if we restructured thr protocol to work on each packet one at a time in order for us to better handle missing/out-of-order packet cases. By choosing to refactor instead of sticking to the old implementation, we not only got our code to work for higher nastiness levels but we also found design flaws in our former code.
 </p>
 
 </div>
