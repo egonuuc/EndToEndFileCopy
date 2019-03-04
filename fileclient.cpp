@@ -30,22 +30,14 @@
 #include <openssl/sha.h>
 #include <cstdlib>
 #include <math.h>
+#include "utils.h"
 
 using namespace std;          // for C++ std library
 using namespace C150NETWORK;  // for all the comp150 utilities 
 
-// forward declarations
-void checkAndPrintMessage(ssize_t readlen, char *buf, ssize_t bufferlen);
-void setUpDebugLogging(const char *logname, int argc, char *argv[]);
-string makeFileName(string dir, string name);
-void checkDirectory(char *dirname);
-void shaEncrypt(unsigned char *hash, const unsigned char *message);
-void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<string> *fileNames, queue<string> *fileContent, int network_nastiness);
-void printFileHash(unsigned char *hash, char *file_name);
 void checkArgs(int argc, char *argv[]);
-void checkMsg(char (&incomingMessage)[512], ssize_t readlen);
+void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<string> *fileNames, queue<string> *fileContent, int network_nastiness);
 int createPackets(string fileCon, vector<string> *packets);
-bool isFile(string fname);
 void readFile(int nastiness, string filePath, queue<string> *fileContent);
 
 const int serverArg = 1;     // server name is 1st arg
@@ -79,7 +71,7 @@ int main(int argc, char *argv[]) {
     checkDirectory(argv[4]); // make sure source dir exists
     (void) network_nastiness; // TODO: to delete
     setUpDebugLogging("fileclientdebug.txt",argc, argv); // set up debug message logging
-    
+
     SRC = opendir(argv[4]); // open source dir
     if (SRC == NULL) {
         fprintf(stderr,"Error opening source directory %s\n", argv[4]);
@@ -87,7 +79,7 @@ int main(int argc, char *argv[]) {
     }
     preprocessFiles(argv[4], SRC, &shaCodes, &fileNames, &fileContent, file_nastiness);
     closedir(SRC);
-    
+
     try { // Send / receive / print loop
         c150debug->printf(C150APPLICATION,"Creating C150DgmSocket"); // Create the socket
         C150DgmSocket *sock = new C150DgmSocket();
@@ -131,7 +123,7 @@ int main(int argc, char *argv[]) {
                     throw C150NetworkException("Server is down.");	
                 }
                 checkMsg(incomingMessage, readlen);
-                
+
                 string delimiter = ":";
                 string s(incomingMessage);
                 size_t pos = s.find(delimiter);
@@ -195,7 +187,7 @@ int main(int argc, char *argv[]) {
                     throw C150NetworkException("Something has gone wrong");	
                 }
             }
-            
+
             // read ACKNOWLEDGEMENT
             readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
             if (timeout == true && ++confirmation_attempt < MAXATTEMPT) { 
@@ -213,7 +205,7 @@ int main(int argc, char *argv[]) {
                 throw C150NetworkException("Server is down");	
             }
             checkMsg(incomingMessage, readlen);
-            
+
             // If received ACKNOWLEDGEMENT
             if (strcmp(incomingMessage, msgList[4].c_str()) == 0) {
                 cout << "File: " << fileName << ", acknowledgement received" << endl;
@@ -231,12 +223,12 @@ int main(int argc, char *argv[]) {
             /*
             // If received anything else, resend confirmation
             else {
-                if (++confirmation_attempt < MAXATTEMPT) {
-                    sock -> write(msgList[2].c_str(), strlen(msgList[2].c_str())+1);
-                    cout << "File: " << fileName << ", resending confirmation" << endl;
-                }
-                else 
-                    throw C150NetworkException("Something has gone wrong2");	
+            if (++confirmation_attempt < MAXATTEMPT) {
+            sock -> write(msgList[2].c_str(), strlen(msgList[2].c_str())+1);
+            cout << "File: " << fileName << ", resending confirmation" << endl;
+            }
+            else 
+            throw C150NetworkException("Something has gone wrong2");	
             }
             */
         }
@@ -283,54 +275,6 @@ int createPackets(string fileCon, vector<string> *packets) {
         count++;
     }
     return packetno;
-}
-
-// ------------------------------------------------------
-// //                   checkMsg
-// //
-// //  Validates the incoming Message is a null terminated
-// // string
-// // ------------------------------------------------------
-void checkMsg(char (&incomingMessage)[512], ssize_t readlen) {
-    if (readlen == 0) {
-        return;
-    }
-    incomingMessage[readlen] = '\0'; // make sure null terminated 
-    if (readlen > (int)sizeof(incomingMessage)) {
-        throw C150NetworkException("Unexpected over length read in client");
-    }
-    if(incomingMessage[readlen] != '\0') {
-        throw C150NetworkException("Client received message that was not null terminated");	
-    };
-}
-
-// ------------------------------------------------------
-// //                   checkArgs
-// //
-// //  Validates the arguments from the command line
-// // ------------------------------------------------------
-void checkArgs(int argc, char *argv[]) {
-    // Check command line
-    if (argc != 5) {
-        fprintf(stderr, 
-                "Correct syntxt is: %s <server> <networknastiness> "
-                "<filenastiness> <srcdir>\n",argv[0]);
-        exit(1);
-    }
-
-    if (strspn(argv[2], "0123456789") != strlen(argv[2])) {
-        fprintf(stderr,"Network nastiness %s is not numeric\n", argv[2]);
-        fprintf(stderr,"Correct syntxt is: %s <networknastiness_number>\n", 
-                argv[0]);     
-        exit(4);
-    }
-
-    if (strspn(argv[3], "0123456789") != strlen(argv[3])) {
-        fprintf(stderr,"File nastiness %s is not numeric\n", argv[3]);
-        fprintf(stderr,"Correct syntxt is: %s <filenastiness_number>\n", 
-                argv[0]);     
-        exit(4);
-    }
 }
 
 void readFile(int nastiness, string filePath, queue<string> *fileContent){
@@ -407,128 +351,29 @@ void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<s
 }
 
 // ------------------------------------------------------
-// //                   printFileHash
-// //
-// //  Prints the passed in SHA1 hash in a readable format
+// //                   checkArgs
+// // 
+// //  Validates the arguments from the command line
 // // ------------------------------------------------------
-void printFileHash(unsigned char *hash, char *file_name) {
-    printf("SHA1 (\"%s\") = ", file_name);
-    for (int i = 0; i < 20; i++) {
-        printf("%02x", (unsigned int) hash[i]);
-    }
-    printf("\n");
-
-}
-void shaEncrypt(unsigned char *hash, const unsigned char *message) {
-    string msg((const char *)message);
-    SHA1(message, msg.length(), hash);
-}
-
-
-// ------------------------------------------------------
-//                   makeFileName
-//
-// Put together a directory and a file name, making
-// sure there's a / in between
-// ------------------------------------------------------
-string makeFileName(string dir, string name) {
-    stringstream ss;
-    ss << dir;
-    // make sure dir name ends in /
-    if (dir.substr(dir.length()-1,1) != "/")
-        ss << '/';
-    ss << name;     // append file name to dir
-    return ss.str();  // return dir/name
-}
-
-// ------------------------------------------------------
-// //                   checkDirectory
-// //
-// //  Make sure directory exists
-// // ------------------------------------------------------
-void checkDirectory(char *dirname) {
-    struct stat statbuf;
-    if (lstat(dirname, &statbuf) != 0) {
-        fprintf(stderr,"Error stating supplied source directory %s\n", dirname);
-        exit(8);
+void checkArgs(int argc, char *argv[]) {
+    if (argc != 5) {
+        fprintf(stderr, 
+                "Correct syntxt is: %s <server> <networknastiness> "
+                "<filenastiness> <srcdir>\n",argv[0]);
+        exit(1);
     }
 
-    if (!S_ISDIR(statbuf.st_mode)) {
-        fprintf(stderr,"File %s exists but is not a directory\n", dirname);
-        exit(8);
-    }
-}
-
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-//                     checkAndPrintMessage
-//
-//        Make sure length is OK, clean up response buffer
-//        and print it to standard output.
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-
-void checkAndPrintMessage(ssize_t readlen, char *msg, ssize_t bufferlen) {
-    // Except in case of timeouts, we're not expecting a zero length read
-    if (readlen == 0) {
-        throw C150NetworkException("Unexpected zero length read in client");
+    if (strspn(argv[2], "0123456789") != strlen(argv[2])) {
+        fprintf(stderr,"Network nastiness %s is not numeric\n", argv[2]);
+        fprintf(stderr,"Correct syntxt is: %s <networknastiness_number>\n", 
+                argv[0]);     
+        exit(4);
     }
 
-    // DEFENSIVE PROGRAMMING: we aren't even trying to read this much
-    // We're just being extra careful to check this
-    if (readlen > (int)(bufferlen)) {
-        throw C150NetworkException("Unexpected over length read in client");
+    if (strspn(argv[3], "0123456789") != strlen(argv[3])) {
+        fprintf(stderr,"File nastiness %s is not numeric\n", argv[3]);
+        fprintf(stderr,"Correct syntxt is: %s <filenastiness_number>\n", 
+                argv[0]);     
+        exit(4);
     }
-
-    // Make sure server followed the rules and sent a null-terminated string 
-    // (well, we could check that it's all legal characters, but at least we 
-    // look for the null)
-    if(msg[readlen-1] != '\0') {
-        throw C150NetworkException("Client received message that was not null terminated");	
-    };
-
-    // Echo the response on the console
-    string s(msg);
-    cleanString(s);
-
-    c150debug->printf(C150APPLICATION,"PRINTING RESPONSE: Response received is \"%s\"",
-            s.c_str());
-
-    printf("Response received is \"%s\"\n", s.c_str());
-}
-
-// ------------------------------------------------------
-//                   isFile
-//
-//  Make sure the supplied file is not a directory or
-//  other non-regular file.
-// ------------------------------------------------------
-bool isFile(string fname) {
-    const char *filename = fname.c_str();
-    struct stat statbuf;  
-    if (lstat(filename, &statbuf) != 0) {
-        fprintf(stderr,"isFile: Error stating supplied source file %s\n", filename);
-        return false;
-    }
-
-    if (!S_ISREG(statbuf.st_mode)) {
-        fprintf(stderr,"isFile: %s exists but is not a regular file\n", filename);
-        return false;
-    }
-    return true;
-}
-
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-//                     setUpDebugLogging
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-void setUpDebugLogging(const char *logname, int argc, char *argv[]) {
-    ofstream *outstreamp = new ofstream(logname);
-    DebugStream *filestreamp = new DebugStream(outstreamp);
-    DebugStream::setDefaultLogger(filestreamp);
-
-    //  Put the program name and a timestamp on each line of the debug log.
-    c150debug->setPrefix(argv[0]);
-    c150debug->enableTimestamp(); 
-    c150debug->enableLogging(C150APPLICATION | C150NETWORKTRAFFIC | 
-            C150NETWORKDELIVERY); 
 }

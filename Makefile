@@ -2,16 +2,6 @@
 #
 #    Copyright 2012 - Noah Mendelsohn
 #
-# The targets below are for samples that may be helpful, but:
-#
-#   YOUR MAIN JOB IN THIS ASSIGNMENT IS TO CREATE TWO 
-#   NEW PROGRAMS: fileclient and fileserver
-#
-#   YOU WILL MODIFY THIS MAKEFILE TO BUILD THEM TOO
-#
-# Useful sample program targets:
-#
-#
 #    nastyfiletest - demonstrates the c150nastyfile class that you 
 #                    MUST use to read and write your files
 #
@@ -21,14 +11,6 @@
 #                    it's useful to have files in which it's
 #                    relatively easy to spot changes.
 #                    This program generates sample data files.
-#
-#  Maintenance targets:
-#
-#    Make sure these clean up and build your code too
-#
-#    clean       - clean out all compiled object and executable files
-#    all         - (default target) make sure everything's compiled
-#
 
 # Do all C++ compies with g++
 CPP = g++
@@ -67,11 +49,11 @@ makedatafile: makedatafile.cpp
 #
 # Build file client and file server
 #
-fileclient: fileclient.o  $(C150AR) $(INCLUDES)
-	$(CPP) -o fileclient fileclient.o $(C150AR) -lssl -lcrypto
+fileclient: fileclient.o utils.o $(C150AR) $(INCLUDES)
+	$(CPP) -o fileclient fileclient.o utils.o $(C150AR) -lssl -lcrypto
 
-fileserver: fileserver.o  $(C150AR) $(INCLUDES)
-	$(CPP) -o fileserver fileserver.o $(C150AR) -lssl -lcrypto
+fileserver: fileserver.o  utils.o $(C150AR) $(INCLUDES)
+	$(CPP) -o fileserver fileserver.o utils.o $(C150AR) -lssl -lcrypto
 
 
 #
