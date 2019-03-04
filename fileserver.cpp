@@ -249,27 +249,6 @@ void storePacket(char *incomingMessage, vector<string> *fileContent, int control
     packetTracker[control_index] = 1;
 }
 
-<<<<<<< HEAD
-=======
-// ------------------------------------------------------
-// //                   checkMsg
-// //
-// //  Validates that the incoming message is a null terminated
-// // string
-// // ------------------------------------------------------
-void checkMsg(char (&incomingMessage)[512], ssize_t readlen) {
-    if (readlen == 0) {
-        return;
-    }
-    incomingMessage[readlen] = '\0'; // make sure null terminated
-    if (readlen > (int)sizeof(incomingMessage)) {
-        throw C150NetworkException("Unexpected over length read in server");
-    }
-    if (incomingMessage[readlen] != '\0') {
-        throw C150NetworkException("Server received message that was not null terminated");
-    }
-}
-
 // ------------------------------------------------------
 // //                   checkArgs
 // //
@@ -295,7 +274,6 @@ void checkArgs(int argc, char *argv[]) {
         exit(4);
     }
 }
->>>>>>> c948bf49c9b890e40f6477225b47058c5e95c520
 
 // ------------------------------------------------------
 // //                   matchFileHash
@@ -336,31 +314,6 @@ bool matchFileHash(char *filepath, DIR *TGT, char *incomingMessage) {
     return matched;
 }
 
-<<<<<<< HEAD
-=======
-// ------------------------------------------------------
-// //                   printFileHash
-// //
-// //  Prints the passed in SHA1 hash in a human readable format
-// // ------------------------------------------------------
-void printFileHash(unsigned char *hash, char *file_name) {
-    printf("SHA1 (\"%s\") = ", file_name);
-    for (int i = 0; i < 20; i++) {
-        printf("%02x", (unsigned int) hash[i]);
-    }
-    printf("\n");
-}
-
-// ------------------------------------------------------
-// //                   shaEncrypt
-// //
-// //  Makes a SHA1 hash of the message provided
-// // ------------------------------------------------------
-void shaEncrypt(unsigned char *hash, const unsigned char *message) {
-    string msg((const char *)message);
-    SHA1(message, msg.length(), hash);
-}
->>>>>>> c948bf49c9b890e40f6477225b47058c5e95c520
 
 // ------------------------------------------------------
 // //                   writeFile
@@ -405,28 +358,3 @@ void writeFile(int nastiness, char *targetDir, string fileName, vector<string> *
 
 }
 
-// ------------------------------------------------------
-// //                   checkArgs
-// //
-// //  Validates the arguments from the command line
-// // ------------------------------------------------------
-void checkArgs(int argc, char *argv[]) {
-    if (argc != 4) {
-        fprintf(stderr,"Correct syntax is: %s <networknastiness> "
-                "<filenastiness> <targetdir>\n", argv[0]);
-        exit(1);
-    }
-    if (strspn(argv[1], "0123456789") != strlen(argv[1])) {
-        fprintf(stderr,"Network Nastiness %s is not numeric\n", argv[1]);     
-        fprintf(stderr,"Correct syntax is: %s <networknastiness_number>\n", 
-                argv[0]);     
-        exit(4);
-    }
-
-    if (strspn(argv[2], "0123456789") != strlen(argv[2])) {
-        fprintf(stderr,"File Nastiness %s is not numeric\n", argv[2]);     
-        fprintf(stderr,"Correct syntax is: %s <filenastiness_number>\n", 
-                argv[0]);     
-        exit(4);
-    }
-}
