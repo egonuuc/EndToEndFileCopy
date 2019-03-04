@@ -250,7 +250,13 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-
+// ------------------------------------------------------
+// //                   createPackets
+// //
+// //  Stores 5 chars representing packet number and 516 
+// //  chars of file contents into packet, stores packet
+// //  into a vector
+// // ------------------------------------------------------
 int createPackets(string fileCon, vector<string> *packets) {
     int packetno = 0;
     int offset = 0;
@@ -288,7 +294,7 @@ int createPackets(string fileCon, vector<string> *packets) {
 // ------------------------------------------------------
 // //                   checkMsg
 // //
-// //  Validates the incoming Message is a null terminated
+// //  Validates that the incoming message is a null terminated
 // // string
 // // ------------------------------------------------------
 void checkMsg(char (&incomingMessage)[512], ssize_t readlen) {
@@ -333,6 +339,11 @@ void checkArgs(int argc, char *argv[]) {
     }
 }
 
+// ------------------------------------------------------
+// //                   readFile
+// //
+// //  Stores file content as a string
+// // ------------------------------------------------------
 void readFile(int nastiness, string filePath, queue<string> *fileContent){
     void *fopenretval;
     size_t len;
@@ -372,13 +383,17 @@ void readFile(int nastiness, string filePath, queue<string> *fileContent){
     }
 }
 
+// ------------------------------------------------------
+// //                   preprocessFiles
+// //
+// //  Loops through files and stores SHA1 checksums and file names
+// // ------------------------------------------------------
 void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<string> *fileNames, queue<string> *fileContent, int nastiness) {
     struct dirent *sourceFile;
     ifstream *t;
     stringstream *buffer;
     unsigned char obuf[20];
 
-    // loop through files, printing checksums
     while ((sourceFile = readdir(SRC)) != NULL) {
         // skip the . and .. names
         if ((strcmp(sourceFile->d_name, ".") == 0) ||
@@ -409,7 +424,7 @@ void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<s
 // ------------------------------------------------------
 // //                   printFileHash
 // //
-// //  Prints the passed in SHA1 hash in a readable format
+// //  Prints the passed in SHA1 hash in a human readable format
 // // ------------------------------------------------------
 void printFileHash(unsigned char *hash, char *file_name) {
     printf("SHA1 (\"%s\") = ", file_name);
@@ -461,7 +476,10 @@ void checkDirectory(char *dirname) {
 
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-//                     checkAndPrintMessage
+//                     
+
+
+
 //
 //        Make sure length is OK, clean up response buffer
 //        and print it to standard output.
