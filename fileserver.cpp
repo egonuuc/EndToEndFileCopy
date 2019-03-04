@@ -50,8 +50,6 @@ int main(int argc, char *argv[]) {
     int file_nastiness;
     DIR *TGT;
     string file;
-    string pktList[] = {"SEND", "RECEIVED_ALL"};
-    string msgList[] = {"BEGIN_TRANSMIT", "COMPLETED_TRANSMIT", "MATCHED_CHECKSUM", "WRONG_CHECKSUM", "ACKNOWLEDGEMENT", "REBEGIN"};
     ssize_t readlen;
     bool matched;
     vector<string> fileContent;

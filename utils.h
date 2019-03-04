@@ -27,4 +27,7 @@ void printFileHash(unsigned char *hash, char *file_name);
 bool isFile(string fname);
 void shaEncrypt(unsigned char *hash, const unsigned char *message);
 
+const string pktList[] = {"SEND", "RECEIVED_ALL"};
+const string msgList[] = {"BEGIN_TRANSMIT", "COMPLETED_TRANSMIT", "MATCHED_CHECKSUM", "WRONG_CHECKSUM", "ACKNOWLEDGEMENT", "REBEGIN"};
+
 #endif

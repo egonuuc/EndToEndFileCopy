@@ -59,8 +59,6 @@ int main(int argc, char *argv[]) {
     vector<string> packets; 
     int file_num = 0;
     int transmission_attempt = 0, end_to_end_attempt = 0, confirmation_attempt = 0;
-    string pktList[] = {"SEND", "RECEIVED_ALL"};
-    string msgList[] = {"BEGIN_TRANSMIT", "COMPLETED_TRANSMIT", "MATCHED_CHECKSUM", "WRONG_CHECKSUM", "ACKNOWLEDGEMENT", "REBEGIN"};
     int totalPacketNum = 0;
 
 
@@ -69,7 +67,7 @@ int main(int argc, char *argv[]) {
     network_nastiness = atoi(argv[2]); // convert command line string to int
     file_nastiness = atoi(argv[3]); // convert command line string to int
     checkDirectory(argv[4]); // make sure source dir exists
-    (void) network_nastiness; // TODO: to delete
+    (void) network_nastiness; 
     setUpDebugLogging("fileclientdebug.txt",argc, argv); // set up debug message logging
 
     SRC = opendir(argv[4]); // open source dir
@@ -136,9 +134,8 @@ int main(int argc, char *argv[]) {
                 } else if (strcmp(incomingMessage, pktList[1].c_str()) == 0) {
                     oneTimeOnly = 0;
                     readAttempt = 0;
-                    cout << "File: " << fileName << " transmission complete, "
-                        << "waiting for end-to-end check, attempt "
-                        << end_to_end_attempt << endl;
+                    cout << "File: " << fileName << ", transmission complete, "
+                        << "waiting for end-to-end check" << endl;
                     *GRADING << "File: " << fileName << " transmission complete, "
                         << "waiting for end-to-end check, attempt "
                         << end_to_end_attempt << endl;
@@ -148,89 +145,89 @@ int main(int argc, char *argv[]) {
 
             // WRITE FILE HASH
             sock -> write(shaCodes[file_num].c_str(), strlen(shaCodes[file_num].c_str())+1); 
-
-            // READ FILE HASH
-            readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
-            timeout = sock -> timedout();
-            if (timeout == true && ++end_to_end_attempt < MAXATTEMPT) { 
-                ++end_to_end_attempt;
-                ++transmission_attempt;
-                sock -> write(shaCodes[file_num].c_str(), strlen(shaCodes[file_num].c_str())+1); 
-                continue;
-            } 
-            if (timeout == true && end_to_end_attempt >= MAXATTEMPT) { 
-                throw C150NetworkException("Server is down");	
-            }
-            checkMsg(incomingMessage, readlen);
-
-            // If received file hash is correct, send MATCHED_CHECKSUM
-            if (strcmp(incomingMessage, shaCodes[file_num].c_str()) == 0) {
-                cout << "File: " << fileName << " file hash matched -- "
-                    << "confirming with server" << endl;
-                sock -> write(msgList[2].c_str(), strlen(msgList[2].c_str())+1);
-                end_to_end_attempt = 0;
-                transmission_attempt = 0;
-            } 
-            // If received WRONG_CHECKSUM, retry file transmission
-            else if (strcmp(incomingMessage, msgList[3].c_str()) == 0) {
-                *GRADING << "File: " << fileName << " end-to-end check failed, "
-                    << "attempt " << ++end_to_end_attempt << endl;
-                if (end_to_end_attempt < MAXATTEMPT) {
-                    cout << "File: " << fileName << " end-to-end check FAILS -- "
-                        << "retrying" << endl;
+            while(1) {
+                // READ FILE HASH
+                readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
+                timeout = sock -> timedout();
+                if (timeout == true && ++end_to_end_attempt < 5) { 
+                    ++end_to_end_attempt;
                     ++transmission_attempt;
+                    sock -> write(shaCodes[file_num].c_str(), strlen(shaCodes[file_num].c_str())+1); 
                     continue;
+                } 
+                if (timeout == true && end_to_end_attempt >= 5) { 
+                    throw C150NetworkException("Server is down");	
                 }
-                else { 
-                    cout << "File: " << fileName << " end-to-end check FAILS -- "
-                        << "giving up" << endl;
-                    throw C150NetworkException("Something has gone wrong");	
-                }
-            }
+                checkMsg(incomingMessage, readlen);
 
-            // read ACKNOWLEDGEMENT
-            readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
-            if (timeout == true && ++confirmation_attempt < MAXATTEMPT) { 
+                // If received file hash is correct, send MATCHED_CHECKSUM
                 if (strcmp(incomingMessage, shaCodes[file_num].c_str()) == 0) {
-                    cout << "File: " << fileName << " file hash matched -- "
+                    cout << "File: " << fileName << ", file hash matched -- "
                         << "confirming with server" << endl;
                     sock -> write(msgList[2].c_str(), strlen(msgList[2].c_str())+1);
                     end_to_end_attempt = 0;
                     transmission_attempt = 0;
                 } 
-                ++confirmation_attempt;
-                continue;
-            }
-            if (timeout == true && confirmation_attempt >= MAXATTEMPT) { 
-                throw C150NetworkException("Server is down");	
-            }
-            checkMsg(incomingMessage, readlen);
+                // If received WRONG_CHECKSUM, retry file transmission
+                else if (strcmp(incomingMessage, msgList[3].c_str()) == 0) {
+                    *GRADING << "File: " << fileName << " end-to-end check failed, "
+                        << "attempt " << ++end_to_end_attempt << endl;
+                    if (end_to_end_attempt < 5) {
+                        cout << "File: " << fileName << ", end-to-end check FAILS -- "
+                            << "retrying" << endl;
+                        ++transmission_attempt;
+                        break;
+                    }
+                    else { 
+                        cout << "File: " << fileName << ", end-to-end check FAILS -- "
+                            << "giving up" << endl;
+                        throw C150NetworkException("Something has gone wrong");	
+                    }
+                }
 
-            // If received ACKNOWLEDGEMENT
-            if (strcmp(incomingMessage, msgList[4].c_str()) == 0) {
-                cout << "File: " << fileName << ", acknowledgement received" << endl;
-                *GRADING << "File: " << fileName << " end-to-end check succeeded, "
-                    << "attempt " << confirmation_attempt << endl;
-                if (strcmp(fileNames.front().c_str(), fileName.c_str()) == 0) {
-                    ++file_num;
-                    fileContent.pop();
-                    fileNames.pop();
-                    packets.clear();
-                    confirmation_attempt = 0;
-                    nextFile = 0;
+                // read ACKNOWLEDGEMENT
+                readlen = sock -> read(incomingMessage, sizeof(incomingMessage)-1);
+                if (timeout == true && ++confirmation_attempt < 5) { 
+                    if (strcmp(incomingMessage, shaCodes[file_num].c_str()) == 0) {
+                        cout << "File: " << fileName << ", file hash matched - "
+                            << "confirming with server" << endl;
+                        sock -> write(msgList[2].c_str(), strlen(msgList[2].c_str())+1);
+                        end_to_end_attempt = 0;
+                        transmission_attempt = 0;
+                    } 
+                    ++confirmation_attempt;
+                    continue;
+                }
+                if (timeout == true && confirmation_attempt >= 5) { 
+                    throw C150NetworkException("Server is down");	
+                }
+                checkMsg(incomingMessage, readlen);
+
+                // If received ACKNOWLEDGEMENT
+                if (strcmp(incomingMessage, msgList[4].c_str()) == 0) {
+                    cout << "File: " << fileName << ", acknowledgement received" << endl;
+                    *GRADING << "File: " << fileName << " end-to-end check succeeded, "
+                        << "attempt " << confirmation_attempt << endl;
+                    if (strcmp(fileNames.front().c_str(), fileName.c_str()) == 0) {
+                        ++file_num;
+                        fileContent.pop();
+                        fileNames.pop();
+                        packets.clear();
+                        confirmation_attempt = 0;
+                        nextFile = 0;
+                        break;
+                    }
+                }
+                // If received anything else, resend MATCHED_CHECKSUM
+                else {
+                    if (++confirmation_attempt < MAXATTEMPT) {
+                        sock -> write(msgList[2].c_str(), strlen(msgList[2].c_str())+1);
+                        cout << "File: " << fileName << ", resending confirmation" << endl;
+                    }
+                    else 
+                        throw C150NetworkException("Something has gone wrong2");	
                 }
             }
-            /*
-            // If received anything else, resend confirmation
-            else {
-            if (++confirmation_attempt < MAXATTEMPT) {
-            sock -> write(msgList[2].c_str(), strlen(msgList[2].c_str())+1);
-            cout << "File: " << fileName << ", resending confirmation" << endl;
-            }
-            else 
-            throw C150NetworkException("Something has gone wrong2");	
-            }
-            */
         }
         delete sock;
     }
