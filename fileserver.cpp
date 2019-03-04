@@ -7,7 +7,7 @@
 //
 //        COMMAND LINE
 //
-//              fileserver <networknastiness> <filenastiness> <targetdir>
+//        fileserver <networknastiness> <filenastiness> <targetdir>
 //     
 // --------------------------------------------------------------
 
@@ -45,6 +45,7 @@ bool isFile(string fname);
 void writeFile(int nastiness, char *targetDir, string fileName, vector<string> *fileContent);
 void storePacket(char *incomingMessage, vector<string> *fileContent, int control_index, int *packetTracker);
 void extractControlInfo(char *incomingMessage, int *control_index);
+void cleanBadFiles(char *filepath, DIR *TGT);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 //
@@ -147,6 +148,8 @@ int main(int argc, char *argv[]) {
                         }
                     } 
                     if (fileContent.size() == (unsigned int)totalPacketNum) {
+                        cout << "File: " << file << " received, beginning end-to-end check" << endl;
+                        *GRADING << "File: " << file << " received, beginning end-to-end check" << endl;
                         sock->write(pktList[1].c_str(), strlen(pktList[1].c_str())+1);
                         writeFile(file_nastiness, argv[3], file, &fileContent);
                         readAttempt = 0;
@@ -156,9 +159,19 @@ int main(int argc, char *argv[]) {
             }
             // If received MATCHED_CHECKSUM
             else if (strcmp(msgList[2].c_str(),incomingMessage) == 0){
-                cout << "File: " << file << " copied successfully" << endl;
+                cout << "File: " << file << " end-to-end check succeeded" << endl;
                 sock -> write(msgList[4].c_str(), strlen(msgList[4].c_str())+1);
                 *GRADING << "File: " << file << " end-to-end check succeeded" << endl;
+                string targetName = makeFileName(argv[3], file + ".TMP");
+                string newName = makeFileName(argv[3], file);
+                rename(targetName.c_str(), newName.c_str());
+                TGT = opendir(argv[3]);
+                if (TGT == NULL) {
+                    fprintf(stderr,"Error opening target directory %s\n", argv[3]);
+                    exit(8);
+                }
+                cleanBadFiles(argv[3], TGT);
+                closedir(TGT);
                 fileContent.clear();
                 initMsg = "";
                 continue;
@@ -176,10 +189,8 @@ int main(int argc, char *argv[]) {
                 matched = matchFileHash(argv[3], TGT, incomingMessage);
                 if (matched == true) {
                     sock -> write(incomingMessage, strlen(incomingMessage)+1);
-                    // TODO rename TMP file
                 } else {
                     string str = "WRONG_CHECKSUM";
-                    //TODO If wrong checksum, delete temp file
                     sock -> write(str.c_str(), strlen(str.c_str())+1);
                     cout << "File: " << file << " end-to-end check failed" << endl;
                     *GRADING << "File: " << file << " end-to-end check failed" << endl;
@@ -198,6 +209,22 @@ int main(int argc, char *argv[]) {
     }
     return 4;
 }
+
+void cleanBadFiles(char *filepath, DIR *TGT) {
+    struct dirent *targetFile;
+    // loop through files
+    while ((targetFile = readdir(TGT)) != NULL) {
+        // skip the . and .. names
+        if ((strcmp(targetFile->d_name, ".") == 0) ||
+                (strcmp(targetFile->d_name, "..")  == 0 )) 
+            continue;
+        string tFile(targetFile->d_name);
+        if (strcmp(".TMP", (tFile.substr(tFile.length() - 4, 4)).c_str()) == 0) {
+            remove(targetFile->d_name);
+        }
+    }
+}
+
 
 // ------------------------------------------------------
 // //                  extractControlInfo
@@ -373,9 +400,7 @@ void writeFile(int nastiness, char *targetDir, string fileName, vector<string> *
                 "  errno=" << strerror(errno) << endl;
             exit(16);
         }
-        if (outputFile.fclose() == 0 ) {
-           cout << "File " << targetName << " has been written" << endl;
-        } else {
+        if (outputFile.fclose() != 0 ) {
             cerr << "Error closing output file " << targetName << 
                 " errno=" << strerror(errno) << endl;
             exit(16);
