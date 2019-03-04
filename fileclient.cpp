@@ -242,7 +242,13 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-
+// ------------------------------------------------------
+// //                   createPackets
+// //
+// //  Stores 5 chars representing packet number and 516 
+// //  chars of file contents into packet, stores packet
+// //  into a vector
+// // ------------------------------------------------------
 int createPackets(string fileCon, vector<string> *packets) {
     int packetno = 0;
     int offset = 0;
@@ -277,6 +283,40 @@ int createPackets(string fileCon, vector<string> *packets) {
     return packetno;
 }
 
+// ------------------------------------------------------
+// //                   checkArgs
+// //
+// //  Validates the arguments from the command line
+// // ------------------------------------------------------
+void checkArgs(int argc, char *argv[]) {
+    // Check command line
+    if (argc != 5) {
+        fprintf(stderr, 
+                "Correct syntxt is: %s <server> <networknastiness> "
+                "<filenastiness> <srcdir>\n",argv[0]);
+        exit(1);
+    }
+
+    if (strspn(argv[2], "0123456789") != strlen(argv[2])) {
+        fprintf(stderr,"Network nastiness %s is not numeric\n", argv[2]);
+        fprintf(stderr,"Correct syntxt is: %s <networknastiness_number>\n", 
+                argv[0]);     
+        exit(4);
+    }
+
+    if (strspn(argv[3], "0123456789") != strlen(argv[3])) {
+        fprintf(stderr,"File nastiness %s is not numeric\n", argv[3]);
+        fprintf(stderr,"Correct syntxt is: %s <filenastiness_number>\n", 
+                argv[0]);     
+        exit(4);
+    }
+}
+
+// ------------------------------------------------------
+// //                   readFile
+// //
+// //  Stores file content as a string
+// // ------------------------------------------------------
 void readFile(int nastiness, string filePath, queue<string> *fileContent){
     void *fopenretval;
     size_t len;
@@ -316,13 +356,17 @@ void readFile(int nastiness, string filePath, queue<string> *fileContent){
     }
 }
 
+// ------------------------------------------------------
+// //                   preprocessFiles
+// //
+// //  Loops through files and stores SHA1 checksums and file names
+// // ------------------------------------------------------
 void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<string> *fileNames, queue<string> *fileContent, int nastiness) {
     struct dirent *sourceFile;
     ifstream *t;
     stringstream *buffer;
     unsigned char obuf[20];
 
-    // loop through files, printing checksums
     while ((sourceFile = readdir(SRC)) != NULL) {
         // skip the . and .. names
         if ((strcmp(sourceFile->d_name, ".") == 0) ||
@@ -350,30 +394,3 @@ void preprocessFiles(char *filepath, DIR *SRC, vector<string> *shaCodes, queue<s
     }
 }
 
-// ------------------------------------------------------
-// //                   checkArgs
-// // 
-// //  Validates the arguments from the command line
-// // ------------------------------------------------------
-void checkArgs(int argc, char *argv[]) {
-    if (argc != 5) {
-        fprintf(stderr, 
-                "Correct syntxt is: %s <server> <networknastiness> "
-                "<filenastiness> <srcdir>\n",argv[0]);
-        exit(1);
-    }
-
-    if (strspn(argv[2], "0123456789") != strlen(argv[2])) {
-        fprintf(stderr,"Network nastiness %s is not numeric\n", argv[2]);
-        fprintf(stderr,"Correct syntxt is: %s <networknastiness_number>\n", 
-                argv[0]);     
-        exit(4);
-    }
-
-    if (strspn(argv[3], "0123456789") != strlen(argv[3])) {
-        fprintf(stderr,"File nastiness %s is not numeric\n", argv[3]);
-        fprintf(stderr,"Correct syntxt is: %s <filenastiness_number>\n", 
-                argv[0]);     
-        exit(4);
-    }
-}
